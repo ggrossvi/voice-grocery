@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284C7"/>
+      <stop offset="100%" stop-color="#38BDF8"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="#090D16"/>
+  <rect x="24" y="24" width="464" height="464" rx="104" stroke="url(#grad)" stroke-width="8" stroke-opacity="0.3"/>
+  <!-- Microphone & Cart Motif -->
+  <path d="M256 128C229.5 128 208 149.5 208 176V256C208 282.5 229.5 304 256 304C282.5 304 304 282.5 304 256V176C304 149.5 282.5 128 256 128Z" fill="url(#grad)"/>
+  <path d="M168 240C168 288.6 207.4 328 256 328C304.6 328 344 288.6 344 240" stroke="#38BDF8" stroke-width="24" stroke-linecap="round"/>
+  <path d="M256 328V384M200 384H312" stroke="#38BDF8" stroke-width="24" stroke-linecap="round"/>
+</svg>

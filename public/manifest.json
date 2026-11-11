@@ -1,0 +1,18 @@
+{
+  "name": "Kroger Voice Groceries",
+  "short_name": "GroceryVoice",
+  "description": "Voice-enabled grocery assistant with Kroger cart integration and smart staples memory",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#090D16",
+  "theme_color": "#0284C7",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
