@@ -8,7 +8,7 @@
 
 ```mermaid
 flowchart LR
-    PHONE["📱 1. Your Phone<br/><b>Android, iPhone, Mac</b><br/><i>Voice or Text</i>"] --> APP["🧠 2. VoiceGroceries<br/><b>Smart Memory</b><br/><i>Remembers your usuals<br/>& QFC Crown Hill store</i>"] --> CART["🛒 3. Live QFC Cart<br/><b>Kroger / QFC App</b><br/><i>Ready in your app<br/>for pickup or delivery</i>"]
+    PHONE["📱 1. Your Phone<br/><b>Android, iPhone, Mac</b><br/><i>Voice or Text</i>"] --> APP["🧠 2. VoiceGroceries<br/><b>Smart Memory</b><br/><i>Remembers your usuals<br/>& your local QFC / Kroger</i>"] --> CART["🛒 3. Live QFC Cart<br/><b>Kroger / QFC App</b><br/><i>Ready in your app<br/>for pickup or delivery</i>"]
 ```
 
 ---
@@ -20,7 +20,7 @@ flowchart TD
     STEP1["🗣️ 1. You Speak<br/>'I want milk' (or 'yogurt')"] --> CHECK{"🧠 2. Smart Check"}
     
     CHECK -->|"Item is in your favorites"| USUAL["🥛 Your Usual Item<br/>'Found your usual: Kroger Whole Milk ($3.29). Add it?'"]
-    CHECK -->|"New item not ordered before"| CHOICES["🛒 Store Options<br/>Shows top 3 choices from QFC Crown Hill"]
+    CHECK -->|"New item not ordered before"| CHOICES["🛒 Store Options<br/>Shows top 3 choices from your local QFC store"]
     
     USUAL -->|"Say 'Yes'"| DONE["✅ 3. Added to Your Kroger/QFC Cart<br/>Sitting in your cart, ready for pickup or delivery!"]
     CHOICES -->|"Tap your favorite"| DONE
@@ -34,7 +34,7 @@ flowchart TD
 flowchart TD
     APP["📱 1. Your Mobile App<br/><b>Next.js PWA on Android & iPhone</b><br/>• Voice: Web Speech, 'Hey Google' & Siri<br/>• Interface: Clean Dark Theme with Audio Visualizer"]
     
-    SERVER["🧠 2. VoiceGroceries Server<br/><b>Next.js Full-Stack Backend</b><br/>• Understands your spoken grocery items<br/>• Handles Crown Hill QFC store selection"]
+    SERVER["🧠 2. VoiceGroceries Server<br/><b>Next.js Full-Stack Backend</b><br/>• Understands your spoken grocery items<br/>• Handles your local QFC store selection"]
     
     MEMORY[("💾 3. Staples Memory<br/><b>Local Database</b><br/>• Remembers your favorite brands and sizes<br/>• Auto-learns what you buy most often")]
     
@@ -58,7 +58,7 @@ flowchart TD
 | **UI Styling** | **Pure Vanilla CSS** | Tailored dark theme, glassmorphic cards, soundwave animations |
 | **Backend Server** | **Next.js App Router (Node.js 20+)** | Full-stack API routes, intent parser, Kroger API client |
 | **Staples Memory** | **JSON / SQLite (Prisma)** | Auto-remembers favorite brands, sizes, and order frequency |
-| **Grocery APIs** | **Kroger Developer API** | Live catalog search, QFC Crown Hill stock, Customer Cart additions |
+| **Grocery APIs** | **Kroger Developer API** | Live catalog search, local QFC stock, Customer Cart additions |
 | **Testing & CI** | **Vitest + GitHub Actions** | 11 automated unit tests and CI build verification on every push |
 
 ---
@@ -67,7 +67,7 @@ flowchart TD
 
 * **"Order My Usual" Staples Intelligence**: Solves Kroger's missing purchase-history API by remembering your household staples and auto-learning what you buy most frequently.
 * **Live Catalog Search with Options**: Searching for new items (like *"yogurt"*) queries Kroger's live production catalog and displays top options with photos, sizes, and prices.
-* **50-Mile Store Locator**: Set your home store to **QFC Crown Hill (`70500872`)** or search any store across 50 miles via GPS or Zip code.
+* **50-Mile Store Locator**: Automatically pin your preferred neighborhood store (QFC, Fred Meyer, Kroger) or search across 50 miles via GPS or Zip code.
 * **Universal Assistant Webhook**: Connects to Google Assistant Routines and Apple Siri Shortcuts for true hands-free voice access.
 * **Zero Credential Leaks**: Strict `.gitignore` rules prevent private API secrets or database files from ever being committed.
 
@@ -91,7 +91,7 @@ Fill in your Kroger Developer credentials from [developer.kroger.com](https://de
 ```env
 KROGER_CLIENT_ID=your_client_id_here
 KROGER_CLIENT_SECRET=your_client_secret_here
-KROGER_DEFAULT_LOCATION_ID=70500872
+KROGER_DEFAULT_LOCATION_ID=your_local_store_id_here
 ```
 
 ### 3. Verify Kroger Credentials (Privately)
@@ -111,7 +111,7 @@ npm run dev
 ```bash
 npm test
 ```
-Runs the full Vitest suite covering voice intent parsing, staples memory, Crown Hill store matching, and Kroger data normalization.
+Runs the full Vitest suite covering voice intent parsing, staples memory, local store matching, and Kroger data normalization.
 
 ---
 
