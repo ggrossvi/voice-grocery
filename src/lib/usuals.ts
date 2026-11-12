@@ -1,15 +1,20 @@
 /**
- * Usual Items & Staples Memory Engine
+ * Usual Items & Staples Memory Engine (Smart Switch: Neon Postgres + Local JSON Fallback)
  * 
  * Since Kroger's public developer API does not expose historical receipts or past orders,
- * this module maintains your personal purchase memory and staple items locally.
+ * this module maintains your personal purchase memory and staple items.
+ *
+ * Smart Switch behavior:
+ * - When DATABASE_URL is configured (e.g. Neon Postgres on Vercel or locally), queries Prisma.
+ * - When DATABASE_URL is not set, automatically falls back to local `data/usuals.json`.
  */
 
 import fs from 'fs';
 import path from 'path';
 import { UsualItem, KrogerProduct } from './types';
+import { getPrismaClient } from './prisma';
 
-// Path to the local JSON file where staple items are persisted
+// Path to the local JSON file where staple items are persisted when DATABASE_URL is not set
 const USUALS_FILE_PATH = path.join(process.cwd(), 'data', 'usuals.json');
 
 // Type guard to determine if an object is a UsualItem
@@ -18,7 +23,7 @@ export function isUsualItem(item: KrogerProduct | UsualItem): item is UsualItem 
 }
 
 // Default starter staples seeded on first run
-const DEFAULT_STAPLES: UsualItem[] = [
+export const DEFAULT_STAPLES: UsualItem[] = [
   {
     id: 'staple-milk-01',
     spokenKeyword: 'milk',
@@ -99,7 +104,35 @@ const DEFAULT_STAPLES: UsualItem[] = [
   }
 ];
 
-function ensureStorageExists(): void {
+function mapPrismaRowToUsualItem(row: {
+  id: string;
+  spokenKeyword: string;
+  krogerUpc: string;
+  title: string;
+  brand: string | null;
+  size: string | null;
+  lastPrice: number | null;
+  imageUrl: string | null;
+  orderCount: number;
+  lastOrderedAt: Date;
+  isStaple: boolean;
+}): UsualItem {
+  return {
+    id: row.id,
+    spokenKeyword: row.spokenKeyword,
+    krogerUpc: row.krogerUpc,
+    title: row.title,
+    brand: row.brand ?? undefined,
+    size: row.size ?? undefined,
+    lastPrice: row.lastPrice ?? undefined,
+    imageUrl: row.imageUrl ?? undefined,
+    orderCount: row.orderCount,
+    lastOrderedAt: row.lastOrderedAt.toISOString(),
+    isStaple: row.isStaple,
+  };
+}
+
+function ensureLocalStorageExists(): void {
   const dir = path.dirname(USUALS_FILE_PATH);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -109,9 +142,9 @@ function ensureStorageExists(): void {
   }
 }
 
-export function getUsualItems(): UsualItem[] {
+function getLocalUsualItems(): UsualItem[] {
   try {
-    ensureStorageExists();
+    ensureLocalStorageExists();
     const data = fs.readFileSync(USUALS_FILE_PATH, 'utf-8');
     const items: UsualItem[] = JSON.parse(data);
     return items.sort((a, b) => (b.orderCount || 0) - (a.orderCount || 0));
@@ -121,8 +154,49 @@ export function getUsualItems(): UsualItem[] {
   }
 }
 
-export function findUsualItem(spokenQuery: string): UsualItem | null {
-  const items = getUsualItems();
+export async function getUsualItems(): Promise<UsualItem[]> {
+  const prisma = getPrismaClient();
+  if (prisma) {
+    try {
+      let rows = await prisma.usualItem.findMany({
+        orderBy: { orderCount: 'desc' },
+      });
+
+      // Seed starter staples on first run when table is empty
+      if (rows.length === 0) {
+        await prisma.usualItem.createMany({
+          data: DEFAULT_STAPLES.map(s => ({
+            id: s.id,
+            spokenKeyword: s.spokenKeyword,
+            krogerUpc: s.krogerUpc,
+            title: s.title,
+            brand: s.brand ?? null,
+            size: s.size ?? null,
+            lastPrice: s.lastPrice ?? null,
+            imageUrl: s.imageUrl ?? null,
+            orderCount: s.orderCount,
+            lastOrderedAt: new Date(s.lastOrderedAt),
+            isStaple: s.isStaple,
+          })),
+          skipDuplicates: true,
+        });
+
+        rows = await prisma.usualItem.findMany({
+          orderBy: { orderCount: 'desc' },
+        });
+      }
+
+      return rows.map(mapPrismaRowToUsualItem);
+    } catch (error) {
+      console.error('Prisma error reading usual items, falling back to local storage:', error);
+    }
+  }
+
+  return getLocalUsualItems();
+}
+
+export async function findUsualItem(spokenQuery: string): Promise<UsualItem | null> {
+  const items = await getUsualItems();
   const cleanedQuery = spokenQuery.toLowerCase().trim();
 
   if (!cleanedQuery) return null;
@@ -145,12 +219,42 @@ export function findUsualItem(spokenQuery: string): UsualItem | null {
   return titleMatch || null;
 }
 
-export function recordOrder(item: KrogerProduct | UsualItem, spokenKeyword?: string): UsualItem {
-  const items = getUsualItems();
+export async function recordOrder(item: KrogerProduct | UsualItem, spokenKeyword?: string): Promise<UsualItem> {
   const itemUpc = isUsualItem(item) ? item.krogerUpc : item.upc;
   const itemPrice = isUsualItem(item) ? item.lastPrice : item.price;
   const itemTitle = isUsualItem(item) ? item.title : item.description;
+  const resolvedKeyword = spokenKeyword || (isUsualItem(item) ? item.spokenKeyword : itemTitle.split(' ')[0].toLowerCase());
 
+  const prisma = getPrismaClient();
+  if (prisma) {
+    try {
+      const upserted = await prisma.usualItem.upsert({
+        where: { krogerUpc: itemUpc },
+        update: {
+          orderCount: { increment: 1 },
+          lastOrderedAt: new Date(),
+          ...(itemPrice !== undefined ? { lastPrice: itemPrice } : {}),
+        },
+        create: {
+          spokenKeyword: resolvedKeyword,
+          krogerUpc: itemUpc,
+          title: itemTitle,
+          brand: item.brand ?? null,
+          size: item.size ?? null,
+          lastPrice: itemPrice ?? null,
+          imageUrl: item.imageUrl ?? null,
+          orderCount: 1,
+          lastOrderedAt: new Date(),
+          isStaple: true,
+        },
+      });
+      return mapPrismaRowToUsualItem(upserted);
+    } catch (error) {
+      console.error('Prisma error recording order, falling back to local storage:', error);
+    }
+  }
+
+  const items = getLocalUsualItems();
   const existingIndex = items.findIndex(i => i.krogerUpc === itemUpc);
 
   if (existingIndex >= 0) {
@@ -162,7 +266,7 @@ export function recordOrder(item: KrogerProduct | UsualItem, spokenKeyword?: str
   } else {
     const newItem: UsualItem = {
       id: `staple-${Date.now()}`,
-      spokenKeyword: spokenKeyword || itemTitle.split(' ')[0].toLowerCase(),
+      spokenKeyword: resolvedKeyword,
       krogerUpc: itemUpc,
       title: itemTitle,
       brand: item.brand,
@@ -179,8 +283,20 @@ export function recordOrder(item: KrogerProduct | UsualItem, spokenKeyword?: str
   }
 }
 
-export function deleteUsualItem(id: string): boolean {
-  const items = getUsualItems();
+export async function deleteUsualItem(id: string): Promise<boolean> {
+  const prisma = getPrismaClient();
+  if (prisma) {
+    try {
+      const result = await prisma.usualItem.deleteMany({
+        where: { id },
+      });
+      return result.count > 0;
+    } catch (error) {
+      console.error('Prisma error deleting usual item, falling back to local storage:', error);
+    }
+  }
+
+  const items = getLocalUsualItems();
   const filtered = items.filter(i => i.id !== id);
   if (filtered.length !== items.length) {
     fs.writeFileSync(USUALS_FILE_PATH, JSON.stringify(filtered, null, 2), 'utf-8');

@@ -12,7 +12,7 @@ import { getUsualItems, recordOrder, deleteUsualItem } from '@/lib/usuals';
 
 // GET /api/usuals - List all usual items
 export async function GET() {
-  const items = getUsualItems();
+  const items = await getUsualItems();
   return NextResponse.json({ success: true, items });
 }
 
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Item data required' }, { status: 400 });
     }
 
-    const saved = recordOrder(item, spokenKeyword);
+    const saved = await recordOrder(item, spokenKeyword);
     return NextResponse.json({ success: true, item: saved });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -42,6 +42,6 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ success: false, error: 'ID is required' }, { status: 400 });
   }
 
-  const deleted = deleteUsualItem(id);
+  const deleted = await deleteUsualItem(id);
   return NextResponse.json({ success: deleted });
 }

@@ -69,7 +69,7 @@ export async function POST(request: Request) {
         const token = cookieStore.get('kroger_token')?.value;
 
         await addToKrogerCart(upc, 1, 'PICKUP', token);
-        const savedStaple = recordOrder(item, pendingConfirmation.keyword);
+        const savedStaple = await recordOrder(item, pendingConfirmation.keyword);
 
         return NextResponse.json({
           type: 'ITEM_ADDED',
@@ -92,7 +92,7 @@ export async function POST(request: Request) {
     const groceryTerm = extractGroceryTerm(lowerTranscript);
 
     // 1. Check if user already has a saved "Usual Item" / Favorite
-    const usualMatch = findUsualItem(groceryTerm);
+    const usualMatch = await findUsualItem(groceryTerm);
 
     if (usualMatch) {
       const priceText = usualMatch.lastPrice ? ` for $${usualMatch.lastPrice.toFixed(2)}` : '';

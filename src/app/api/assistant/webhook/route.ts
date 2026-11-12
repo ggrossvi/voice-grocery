@@ -58,7 +58,7 @@ async function handleAssistantRequest(rawItem: string) {
   }
 
   // 1. Check your "Usual Items" database first
-  const usual = findUsualItem(itemTerm);
+  const usual = await findUsualItem(itemTerm);
 
   const cookieStore = await cookies();
   const token = cookieStore.get('kroger_token')?.value;
@@ -66,7 +66,7 @@ async function handleAssistantRequest(rawItem: string) {
   if (usual) {
     // Add your usual item to the Kroger cart
     await addToKrogerCart(usual.krogerUpc, 1, 'PICKUP', token);
-    recordOrder(usual);
+    await recordOrder(usual);
 
     const price = usual.lastPrice ? ` for $${usual.lastPrice.toFixed(2)}` : '';
     return {
@@ -81,7 +81,7 @@ async function handleAssistantRequest(rawItem: string) {
   if (matches.length > 0) {
     const topItem = matches[0];
     await addToKrogerCart(topItem.upc, 1, 'PICKUP', token);
-    const savedStaple = recordOrder(topItem, itemTerm);
+    const savedStaple = await recordOrder(topItem, itemTerm);
 
     const price = topItem.price ? ` for $${topItem.price.toFixed(2)}` : '';
     return {

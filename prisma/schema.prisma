@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// User account keyed by Google Sign-In ID (`sub`)
+model User {
+  /// Google Sign-In unique user ID (Google `sub` claim)
+  id                   String      @id
+  email                String      @unique
+  name                 String?
+  image                String?
+  preferredStoreId     String?     @default("70500872")
+
+  /// Linked Kroger OAuth account credentials
+  krogerProfileId      String?
+  krogerAccessToken    String?
+  krogerRefreshToken   String?
+  krogerTokenExpiresAt DateTime?
+  krogerConnectedAt    DateTime?
+
+  /// Cart reminder tracking
+  lastCartActivityAt   DateTime?
+  lastCartRemindedAt   DateTime?
+  cartRemindersEnabled Boolean     @default(true)
+
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  usualItems           UsualItem[]
+  cartItems            CartItem[]
+}
+
+/// Personal "Usual Items" & Staples memory
+model UsualItem {
+  id            String   @id @default(cuid())
+  /// Optional link to Google User ID (null for shared/guest default staples)
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  spokenKeyword String
+  krogerUpc     String   @unique
+  title         String
+  brand         String?
+  size          String?
+  lastPrice     Float?
+  imageUrl      String?
+  orderCount    Int      @default(1)
+  lastOrderedAt DateTime @default(now())
+  isStaple      Boolean  @default(true)
+
+  @@index([userId])
+}
+
+/// Tracks items added to the user's Kroger cart so we can remind them by email
+model CartItem {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  krogerUpc  String
+  title      String
+  brand      String?
+  size       String?
+  price      Float?
+  imageUrl   String?
+  quantity   Int       @default(1)
+  modality   String    @default("PICKUP")
+
+  addedAt    DateTime  @default(now())
+  remindedAt DateTime?
+  checkedOut Boolean   @default(false)
+
+  @@index([userId, checkedOut])
+}

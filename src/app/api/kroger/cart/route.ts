@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     const cartResult = await addToKrogerCart(upc, quantity, modality, token);
 
     // Save to our app's Usual Items memory engine
-    const updatedUsual = recordOrder(item, spokenKeyword);
+    const updatedUsual = await recordOrder(item, spokenKeyword);
 
     return NextResponse.json({
       success: true,
