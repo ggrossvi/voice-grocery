@@ -45,5 +45,20 @@ export const APP_CONFIG = {
     isConfigured(): boolean {
       return Boolean(this.clientId && this.clientSecret);
     }
+  },
+
+  // Google Sign-In OAuth2 Configuration
+  google: {
+    authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    userInfoUrl: 'https://www.googleapis.com/oauth2/v3/userinfo',
+    clientId: process.env.GOOGLE_CLIENT_ID || '',
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+    redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/api/auth/google/callback',
+    scopes: 'openid email profile',
+
+    isConfigured(): boolean {
+      return Boolean(this.clientId && this.clientSecret);
+    }
   }
 };

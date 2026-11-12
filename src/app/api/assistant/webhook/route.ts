@@ -16,6 +16,12 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { findUsualItem, recordOrder } from '@/lib/usuals';
 import { searchKrogerProducts, addToKrogerCart } from '@/lib/kroger';
+import {
+  getValidKrogerTokenForUser,
+  KROGER_TOKEN_COOKIE,
+  recordUserCartItem,
+  USER_SESSION_COOKIE,
+} from '@/lib/auth';
 
 // Helper to extract the grocery item name from varied assistant request formats
 function parseIncomingItem(reqBody: any, searchParams: URLSearchParams): string {
@@ -61,12 +67,17 @@ async function handleAssistantRequest(rawItem: string) {
   const usual = await findUsualItem(itemTerm);
 
   const cookieStore = await cookies();
-  const token = cookieStore.get('kroger_token')?.value;
+  const userId = cookieStore.get(USER_SESSION_COOKIE)?.value;
+  const cookieToken = cookieStore.get(KROGER_TOKEN_COOKIE)?.value;
+  const token = (await getValidKrogerTokenForUser(userId)) || cookieToken;
 
   if (usual) {
     // Add your usual item to the Kroger cart
     await addToKrogerCart(usual.krogerUpc, 1, 'PICKUP', token);
     await recordOrder(usual);
+    if (userId) {
+      await recordUserCartItem(userId, usual, 1, 'PICKUP');
+    }
 
     const price = usual.lastPrice ? ` for $${usual.lastPrice.toFixed(2)}` : '';
     return {
@@ -82,6 +93,9 @@ async function handleAssistantRequest(rawItem: string) {
     const topItem = matches[0];
     await addToKrogerCart(topItem.upc, 1, 'PICKUP', token);
     const savedStaple = await recordOrder(topItem, itemTerm);
+    if (userId) {
+      await recordUserCartItem(userId, topItem, 1, 'PICKUP');
+    }
 
     const price = topItem.price ? ` for $${topItem.price.toFixed(2)}` : '';
     return {

@@ -1,45 +1,48 @@
 /**
- * Kroger OAuth2 Callback Handler
- * 
+ * Kroger OAuth2 Callback Route
+ *
  * Route: GET /api/auth/kroger/callback
- * Kroger redirects back here with a '?code=...' query parameter.
- * We exchange that code for access and refresh tokens, and store them securely in an HTTP-only cookie.
+ * Exchanges the Kroger authorization code for customer tokens and links them
+ * to the signed-in Google User row in the database.
  */
 
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { exchangeCodeForTokens } from '@/lib/kroger';
+import { KROGER_TOKEN_COOKIE, linkKrogerAccountToUser, USER_SESSION_COOKIE } from '@/lib/auth';
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
+  const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
+  const state = searchParams.get('state') || '';
   const error = searchParams.get('error');
 
-  const homeUrl = new URL('/', request.url);
-
   if (error || !code) {
-    homeUrl.searchParams.set('auth_error', error || 'missing_code');
-    return NextResponse.redirect(homeUrl);
+    return NextResponse.redirect(`${origin}/?auth_error=${encodeURIComponent(error || 'kroger_missing_code')}`);
   }
 
   try {
-    // Exchange the authorization code for customer tokens
     const tokens = await exchangeCodeForTokens(code);
+    const cookieStore = await cookies();
+    const stateUserId = state.startsWith('user:') ? state.slice(5) : undefined;
+    const userId = cookieStore.get(USER_SESSION_COOKIE)?.value || stateUserId;
 
-    homeUrl.searchParams.set('auth_success', 'true');
-    const response = NextResponse.redirect(homeUrl);
+    if (userId) {
+      await linkKrogerAccountToUser(userId, tokens);
+    }
 
-    // Save access token into secure HTTP-only cookie
-    response.cookies.set('kroger_token', tokens.accessToken, {
+    const response = NextResponse.redirect(`${origin}/?auth=kroger_connected`);
+    response.cookies.set(KROGER_TOKEN_COOKIE, tokens.accessToken, {
       httpOnly: true,
+      sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
-      maxAge: tokens.expiresIn || 1800,
       path: '/',
+      maxAge: tokens.expiresIn || 1800,
     });
 
     return response;
   } catch (err: any) {
-    console.error('Kroger callback error:', err);
-    homeUrl.searchParams.set('auth_error', encodeURIComponent(err.message));
-    return NextResponse.redirect(homeUrl);
+    console.error('Kroger OAuth callback error:', err);
+    return NextResponse.redirect(`${origin}/?auth_error=${encodeURIComponent(err.message || 'kroger_oauth_failed')}`);
   }
 }

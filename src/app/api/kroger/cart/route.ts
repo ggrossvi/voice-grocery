@@ -2,14 +2,20 @@
  * Kroger Cart Management API Route
  * 
  * Route: POST /api/kroger/cart
- * Adds an item to the Kroger cart and records it in personal purchase history.
+ * Adds an item to the Kroger cart, records it in personal purchase history,
+ * and saves it to the signed-in Google user's CartItem table for cart reminders.
  */
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { addToKrogerCart } from '@/lib/kroger';
 import { recordOrder } from '@/lib/usuals';
-import { KrogerProduct, UsualItem } from '@/lib/types';
+import {
+  getValidKrogerTokenForUser,
+  KROGER_TOKEN_COOKIE,
+  recordUserCartItem,
+  USER_SESSION_COOKIE,
+} from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
@@ -22,7 +28,10 @@ export async function POST(request: Request) {
 
     const upc = item.upc || item.krogerUpc;
     const cookieStore = await cookies();
-    const token = cookieStore.get('kroger_token')?.value;
+    const userId = cookieStore.get(USER_SESSION_COOKIE)?.value;
+    const cookieToken = cookieStore.get(KROGER_TOKEN_COOKIE)?.value;
+    const linkedToken = await getValidKrogerTokenForUser(userId);
+    const token = linkedToken || cookieToken;
 
     // Call Kroger Cart API (PUT /v1/cart/add)
     const cartResult = await addToKrogerCart(upc, quantity, modality, token);
@@ -30,10 +39,16 @@ export async function POST(request: Request) {
     // Save to our app's Usual Items memory engine
     const updatedUsual = await recordOrder(item, spokenKeyword);
 
+    // If signed in with Google, record item against userId & email for cart reminders
+    const cartEntry = userId
+      ? await recordUserCartItem(userId, item, quantity, modality)
+      : null;
+
     return NextResponse.json({
       success: true,
       message: cartResult.message,
       item: updatedUsual,
+      cartEntry,
     });
   } catch (error: any) {
     console.error('Cart add error:', error);

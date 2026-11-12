@@ -12,6 +12,12 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { findUsualItem, recordOrder } from '@/lib/usuals';
 import { searchKrogerProducts, addToKrogerCart } from '@/lib/kroger';
+import {
+  getValidKrogerTokenForUser,
+  KROGER_TOKEN_COOKIE,
+  recordUserCartItem,
+  USER_SESSION_COOKIE,
+} from '@/lib/auth';
 import { PendingConfirmation } from '@/lib/types';
 
 const CLEANUP_PATTERNS = [
@@ -66,10 +72,15 @@ export async function POST(request: Request) {
         const title = 'description' in item ? item.description : item.title;
 
         const cookieStore = await cookies();
-        const token = cookieStore.get('kroger_token')?.value;
+        const userId = cookieStore.get(USER_SESSION_COOKIE)?.value;
+        const cookieToken = cookieStore.get(KROGER_TOKEN_COOKIE)?.value;
+        const token = (await getValidKrogerTokenForUser(userId)) || cookieToken;
 
         await addToKrogerCart(upc, 1, 'PICKUP', token);
         const savedStaple = await recordOrder(item, pendingConfirmation.keyword);
+        if (userId) {
+          await recordUserCartItem(userId, item, 1, 'PICKUP');
+        }
 
         return NextResponse.json({
           type: 'ITEM_ADDED',

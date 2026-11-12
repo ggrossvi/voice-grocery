@@ -95,3 +95,28 @@ export interface VoiceMessage {
   timestamp: string;
   suggestedItem?: KrogerProduct | UsualItem;
 }
+
+// Authenticated user profile keyed by Google Sign-In ID
+export interface UserProfile {
+  id: string; // Google Sign-In ID (`sub`)
+  email: string;
+  name?: string;
+  image?: string;
+  preferredStoreId?: string;
+  krogerConnected: boolean;
+  krogerConnectedAt?: string;
+  cartRemindersEnabled: boolean;
+  lastCartActivityAt?: string;
+  lastCartRemindedAt?: string;
+}
+
+// Reminder payload for users who have items waiting in their Kroger cart
+export interface CartReminderSummary {
+  userId: string;
+  email: string;
+  name?: string;
+  itemCount: number;
+  items: CartItem[];
+  lastCartActivityAt?: string;
+  reminderMessage: string;
+}

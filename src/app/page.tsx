@@ -4,6 +4,9 @@
  * Main Home Page - VoiceGroceries
  * 
  * Supports:
+ * - Google Sign-In (`userId` = Google `sub` ID + `email`)
+ * - Connecting Kroger / QFC account to Google profile
+ * - Cart reminders when items are waiting in the user's cart
  * - 5-Store Locator with "Use My Location" GPS
  * - Voice and text grocery ordering
  * - Live Kroger / QFC catalog queries
@@ -11,25 +14,28 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { ShoppingBag, MapPin } from 'lucide-react';
+import { ShoppingBag, MapPin, UserCheck, Link2, Bell, LogOut } from 'lucide-react';
 import { VoiceAssistantHero } from '@/components/VoiceAssistantHero';
 import { StaplesList } from '@/components/StaplesList';
 import { ActiveCartDrawer } from '@/components/ActiveCartDrawer';
 import { AssistantInstructionsModal } from '@/components/AssistantInstructionsModal';
 import { StoreSelectorModal } from '@/components/StoreSelectorModal';
-import { UsualItem, CartItem, KrogerStoreLocation } from '@/lib/types';
+import { UsualItem, CartItem, KrogerStoreLocation, UserProfile } from '@/lib/types';
 
 export default function Home() {
   const [staples, setStaples] = useState<UsualItem[]>([]);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [cartReminder, setCartReminder] = useState<string | null>(null);
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [isAssistantModalOpen, setIsAssistantModalOpen] = useState(false);
   const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
   const [selectedStore, setSelectedStore] = useState<KrogerStoreLocation | null>(null);
 
-  // Load saved staples and preferred store from storage on mount
+  // Load saved staples, authenticated Google user + Kroger link status, and preferred store on mount
   useEffect(() => {
     fetchStaples();
+    fetchAuthSession();
 
     // Check localStorage for saved store
     if (typeof window !== 'undefined') {
@@ -41,6 +47,35 @@ export default function Home() {
       }
     }
   }, []);
+
+  const fetchAuthSession = async () => {
+    try {
+      const res = await fetch('/api/auth/me');
+      const data = await res.json();
+      if (data.authenticated && data.user) {
+        setUser(data.user);
+        if (Array.isArray(data.cartItems) && data.cartItems.length > 0) {
+          setCartItems(data.cartItems);
+        }
+        setCartReminder(data.cartReminder || null);
+      } else {
+        setUser(null);
+        setCartReminder(null);
+      }
+    } catch (err) {
+      console.error('Failed to load auth session:', err);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await fetch('/api/auth/me', { method: 'DELETE' });
+      setUser(null);
+      setCartReminder(null);
+    } catch (err) {
+      console.error('Sign out error:', err);
+    }
+  };
 
   const fetchStaples = async () => {
     try {
@@ -73,7 +108,13 @@ export default function Home() {
       quantity: 1,
       addedAt: new Date().toISOString(),
     };
-    setCartItems(prev => [newCartItem, ...prev]);
+    setCartItems(prev => {
+      const updated = [newCartItem, ...prev];
+      if (user) {
+        setCartReminder(`Reminder for ${user.email}: You have ${updated.length} item(s) waiting in your Kroger cart.`);
+      }
+      return updated;
+    });
     fetchStaples();
   };
 
@@ -123,6 +164,95 @@ export default function Home() {
           </span>
         </button>
       </header>
+
+      {/* Google Sign-In & Kroger Account Link Bar */}
+      <section
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
+          padding: '10px 14px',
+          marginBottom: '12px',
+          borderRadius: '14px',
+          background: 'rgba(255, 255, 255, 0.04)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          fontSize: '0.78rem',
+        }}
+      >
+        {!user ? (
+          <>
+            <span style={{ color: 'var(--text-secondary)' }}>
+              Sign in with Google to link your Kroger account &amp; get cart reminders
+            </span>
+            <a
+              href="/api/auth/google"
+              className="status-pill connected"
+              style={{ textDecoration: 'none', cursor: 'pointer', fontWeight: 600 }}
+            >
+              <UserCheck size={13} />
+              <span>Sign in with Google</span>
+            </a>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span className="status-pill connected" title={`Google ID: ${user.id}`}>
+                <UserCheck size={13} />
+                <span>{user.email}</span>
+              </span>
+
+              {user.krogerConnected ? (
+                <span className="status-pill connected">
+                  <Link2 size={13} />
+                  <span>Kroger Linked</span>
+                </span>
+              ) : (
+                <a
+                  href="/api/auth/kroger"
+                  className="status-pill sandbox"
+                  style={{ textDecoration: 'none', cursor: 'pointer' }}
+                >
+                  <Link2 size={13} />
+                  <span>Connect Kroger Account</span>
+                </a>
+              )}
+            </div>
+
+            <button
+              onClick={handleSignOut}
+              className="status-pill sandbox"
+              style={{ cursor: 'pointer', background: 'transparent' }}
+              title="Sign out"
+            >
+              <LogOut size={12} />
+              <span>Sign out</span>
+            </button>
+          </>
+        )}
+      </section>
+
+      {/* Cart Reminder Notification Banner */}
+      {cartReminder && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 14px',
+            marginBottom: '12px',
+            borderRadius: '12px',
+            background: 'rgba(16, 185, 129, 0.12)',
+            border: '1px solid rgba(16, 185, 129, 0.3)',
+            fontSize: '0.78rem',
+            color: '#a7f3d0',
+          }}
+        >
+          <Bell size={15} style={{ flexShrink: 0 }} />
+          <span>{cartReminder}</span>
+        </div>
+      )}
 
       {/* Voice Assistant Core */}
       <VoiceAssistantHero 

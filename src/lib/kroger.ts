@@ -233,6 +233,43 @@ export async function exchangeCodeForTokens(code: string): Promise<{
 }
 
 /**
+ * Refreshes an expired customer Kroger access token using a saved refresh token
+ */
+export async function refreshKrogerToken(refreshToken: string): Promise<{
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+}> {
+  const credentials = Buffer.from(
+    `${APP_CONFIG.kroger.clientId}:${APP_CONFIG.kroger.clientSecret}`
+  ).toString('base64');
+
+  const response = await fetch(APP_CONFIG.kroger.tokenUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${credentials}`,
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    }).toString(),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Kroger Token Refresh failed (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token || refreshToken,
+    expiresIn: data.expires_in,
+  };
+}
+
+/**
  * Adds an item to the Kroger Customer Cart (PUT /v1/cart/add)
  */
 export async function addToKrogerCart(
