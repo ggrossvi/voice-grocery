@@ -60,6 +60,14 @@ export async function getClientCredentialsToken(): Promise<string> {
 }
 
 /**
+ * Returns false for non-grocery Kroger locations such as Fred Meyer Jewelers, Fuel Centers, or Clinics.
+ */
+export function isGroceryStoreLocation(name: string = '', chain: string = ''): boolean {
+  const combined = `${name} ${chain}`.toLowerCase();
+  return !combined.includes('jewelers') && !combined.includes('fuel') && !combined.includes('clinic');
+}
+
+/**
  * Queries Kroger Locations API to find the 5 closest stores by GPS coordinates or Zip Code.
  */
 export async function getKrogerLocations(params: {
@@ -97,18 +105,20 @@ export async function getKrogerLocations(params: {
     const data = await response.json();
     const rawLocations = data.data || [];
 
-    return rawLocations.map((loc: any) => ({
-      locationId: loc.locationId,
-      name: loc.name || loc.address?.addressLine1,
-      chain: loc.chain || 'Kroger',
-      address: {
-        addressLine1: loc.address?.addressLine1 || '',
-        city: loc.address?.city || '',
-        state: loc.address?.state || '',
-        zipCode: loc.address?.zipCode || '',
-      },
-      phone: loc.phone || '',
-    }));
+    return rawLocations
+      .map((loc: any) => ({
+        locationId: loc.locationId,
+        name: loc.name || loc.address?.addressLine1 || '',
+        chain: loc.chain || 'Kroger',
+        address: {
+          addressLine1: loc.address?.addressLine1 || '',
+          city: loc.address?.city || '',
+          state: loc.address?.state || '',
+          zipCode: loc.address?.zipCode || '',
+        },
+        phone: loc.phone || '',
+      }))
+      .filter((store: KrogerStoreLocation) => isGroceryStoreLocation(store.name, store.chain));
   } catch (error) {
     console.error('Error fetching Kroger locations:', error);
     return [];
