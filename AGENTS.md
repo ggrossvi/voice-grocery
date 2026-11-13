@@ -17,7 +17,11 @@ Before making changes:
 5. Follow `docs/CODING_STANDARDS.md` and `docs/SECURITY.md`.
 
 ## Planning and Approval
-- When we come up with a plan for a feature, add the plan items (with comments/explanations) to `PLAN.md`.
+- Whenever the user wants to add a new feature, always present a structured plan that covers:
+  1. **Problems to Solve**: Clear, plain-language breakdown of the problems and technical gaps that need to be solved.
+  2. **Possible Solutions & Senior Developer Recommendation**: Multiple viable options/approaches with pros/cons, followed by what an experienced senior developer would recommend, **why**, and in **what exact order** (including branch strategy and sequencing) they would approach it.
+  3. **Test Items & Recommended Edge Cases**: A concrete list of test scenarios and edge cases to test for, followed by developing automated tests for those cases once approved.
+- Do not write a proposed plan to `PLAN.md` upfront. First propose and discuss the plan in chat, and only add the approved plan items (with comments/explanations) to `PLAN.md` once we decide which parts of the plan are approved.
 - Explain the proposed solution before implementing significant changes.
 - Suggest specific tests that should be implemented to test a proposed feature before developing new features.
 - Present alternative approaches when meaningful.
@@ -57,8 +61,10 @@ After implementing an approved change, summarize:
 3. Which tests ran and their results
 4. Remaining issues (and whenever an error occurred, clearly explain what caused the problem and how it was fixed)
 5. Recommended next steps
+6. Update `PROBLEMS.md` (which is ignored by `.gitignore`) with a log entry for any new problems addressed, how they were solved, and the reasoning behind the choice.
 
 ## Git
+- Always run the relevant automated test suite (`npm test`) and build check (`npm run build`) before proposing or making a commit. Never commit broken or untested code.
 - Always suggest separate feature branches when a request spans multiple features.
 - Before creating any new branch, always remind the user to delete merged old branches and run `git checkout main && git pull origin main`.
 - Commit after each approved change.

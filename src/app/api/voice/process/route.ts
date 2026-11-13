@@ -20,28 +20,10 @@ import {
   USER_SESSION_COOKIE,
 } from '@/lib/auth';
 import { PendingConfirmation } from '@/lib/types';
-
-const CLEANUP_PATTERNS = [
-  /^(can you\s+)?(please\s+)?(add|put|order|get|buy|i want|i need|we need)\s+/i,
-  /\s+(to my cart|in my cart|to the list|to my list|to cart)$/i,
-  /^(a gallon of|a carton of|a loaf of|a bottle of|a box of|a bag of|some|a|an)\s+/i,
-];
-
-function extractGroceryTerm(rawText: string): string {
-  let cleaned = rawText.toLowerCase().trim();
-  for (const pattern of CLEANUP_PATTERNS) {
-    cleaned = cleaned.replace(pattern, '').trim();
-  }
-  return cleaned;
-}
-
-const AFFIRMATIVE_RESPONSES = [
-  'yes', 'yeah', 'yep', 'sure', 'add it', 'please', 'yes please', 'do it', 'confirm', 'okay', 'ok', 'yup', 'sounds good'
-];
-
-const NEGATIVE_RESPONSES = [
-  'no', 'nope', 'cancel', 'never mind', 'stop', 'dont add', "don't add", 'skip', 'different one'
-];
+import {
+  decideNextVoiceAction,
+  itemAddedConfirmationSpokenResponse,
+} from '@/lib/voice-intent';
 
 export async function POST(request: Request) {
   try {
@@ -52,59 +34,90 @@ export async function POST(request: Request) {
       locationId?: string;
     };
 
-    if (!transcript || !transcript.trim()) {
+    const isWaitingForConfirmation = Boolean(
+      pendingConfirmation &&
+        pendingConfirmation.item &&
+        pendingConfirmation.action === 'ADD_TO_CART'
+    );
+
+    const nextAction = decideNextVoiceAction(
+      transcript || '',
+      isWaitingForConfirmation
+    );
+
+    // -------------------------------------------------------------------------
+    // Scenario 1: Empty speech or filler-only phrase -> stop listening
+    // -------------------------------------------------------------------------
+    if (nextAction.intent === 'NO_SPEECH') {
       return NextResponse.json({
         type: 'NO_SPEECH',
         spokenResponse: "I didn't catch that. Try saying something like 'I want milk' or 'yogurt'.",
+        continueListening: false,
       });
     }
 
-    const lowerTranscript = transcript.toLowerCase().trim();
-
     // -------------------------------------------------------------------------
-    // Scenario 1: User is confirming or rejecting a single pending item
+    // Scenario 2: User said "I'm done", "That's all", or "No" when asked for more
     // -------------------------------------------------------------------------
-    if (pendingConfirmation && pendingConfirmation.item && pendingConfirmation.action === 'ADD_TO_CART') {
-      const isAffirmative = AFFIRMATIVE_RESPONSES.some(word => lowerTranscript.includes(word));
-      const isNegative = NEGATIVE_RESPONSES.some(word => lowerTranscript.includes(word));
-
-      if (isAffirmative) {
-        const item = pendingConfirmation.item;
-        const upc = 'upc' in item ? item.upc : item.krogerUpc;
-        const title = 'description' in item ? item.description : item.title;
-
-        const cookieStore = await cookies();
-        const userId = cookieStore.get(USER_SESSION_COOKIE)?.value;
-        const cookieToken = cookieStore.get(KROGER_TOKEN_COOKIE)?.value;
-        const token = (await getValidKrogerTokenForUser(userId)) || cookieToken;
-
-        await addToKrogerCart(upc, 1, 'PICKUP', token);
-        const savedFavorite = userId
-          ? await recordFavoriteOrder(item, pendingConfirmation.keyword, userId)
-          : undefined;
-        if (userId) {
-          await recordUserCartItem(userId, item, 1, 'PICKUP');
-        }
-
-        return NextResponse.json({
-          type: 'ITEM_ADDED',
-          spokenResponse: `Added ${title} to your Kroger cart!`,
-          addedItem: savedFavorite,
-          clearConfirmation: true,
-        });
-      } else if (isNegative) {
-        return NextResponse.json({
-          type: 'CANCELLED',
-          spokenResponse: "Okay, I won't add that. What else would you like?",
-          clearConfirmation: true,
-        });
-      }
+    if (nextAction.intent === 'SESSION_ENDED') {
+      return NextResponse.json({
+        type: 'SESSION_ENDED',
+        spokenResponse: "Got it! I've stopped listening. Your items are ready in your Kroger cart.",
+        clearConfirmation: true,
+        continueListening: false,
+      });
     }
 
     // -------------------------------------------------------------------------
-    // Scenario 2: Search for an item (e.g. "milk", "yogurt", "apples")
+    // Scenario 3: User confirmed or rejected a single pending item
     // -------------------------------------------------------------------------
-    const groceryTerm = extractGroceryTerm(lowerTranscript);
+    if (
+      nextAction.intent === 'CONFIRM_PENDING_ITEM' &&
+      pendingConfirmation?.item
+    ) {
+      const item = pendingConfirmation.item;
+      const upc = 'upc' in item ? item.upc : item.krogerUpc;
+      const title = 'description' in item ? item.description : item.title;
+
+      const cookieStore = await cookies();
+      const userId = cookieStore.get(USER_SESSION_COOKIE)?.value;
+      const cookieToken = cookieStore.get(KROGER_TOKEN_COOKIE)?.value;
+      const token = (await getValidKrogerTokenForUser(userId)) || cookieToken;
+
+      await addToKrogerCart(upc, 1, 'PICKUP', token);
+      const savedFavorite = userId
+        ? await recordFavoriteOrder(item, pendingConfirmation.keyword, userId)
+        : undefined;
+      if (userId) {
+        await recordUserCartItem(userId, item, 1, 'PICKUP');
+      }
+
+      return NextResponse.json({
+        type: 'ITEM_ADDED',
+        spokenResponse: itemAddedConfirmationSpokenResponse(title),
+        addedItem: savedFavorite || item,
+        clearConfirmation: true,
+        continueListening: true,
+      });
+    }
+
+    if (nextAction.intent === 'CANCEL_PENDING_ITEM') {
+      return NextResponse.json({
+        type: 'CANCELLED',
+        spokenResponse:
+          "Okay, I won't add that. What else would you like? Say \"I'm done\" when finished.",
+        clearConfirmation: true,
+        continueListening: true,
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // Scenario 4: Search for an item (e.g. "milk", "yogurt", "apples")
+    // -------------------------------------------------------------------------
+    const groceryTerm =
+      nextAction.intent === 'SEARCH_GROCERY_ITEM'
+        ? nextAction.groceryTerm
+        : '';
     const cookieStore = await cookies();
     const userId = cookieStore.get(USER_SESSION_COOKIE)?.value;
     const token = cookieStore.get(KROGER_TOKEN_COOKIE)?.value;
@@ -122,6 +135,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         type: 'CONFIRMATION_NEEDED',
         spokenResponse: spokenResponse,
+        continueListening: true,
         pendingConfirmation: {
           item: favoriteMatch,
           isFavorite: true,
@@ -142,6 +156,7 @@ export async function POST(request: Request) {
           type: 'OPTIONS_NEEDED',
           spokenResponse: `I found ${catalogMatches.length} options for "${groceryTerm}" at Kroger. Which one would you prefer?`,
           options: catalogMatches,
+          continueListening: false,
           pendingConfirmation: {
             options: catalogMatches,
             isFavorite: false,
@@ -161,6 +176,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         type: 'CONFIRMATION_NEEDED',
         spokenResponse: spokenResponse,
+        continueListening: true,
         pendingConfirmation: {
           item: topMatch,
           isFavorite: false,
@@ -174,7 +190,8 @@ export async function POST(request: Request) {
     // 3. Fallback: No matches returned by Kroger
     return NextResponse.json({
       type: 'NOT_FOUND',
-      spokenResponse: `I couldn't find any products matching "${groceryTerm}" on Kroger. Try searching with a brand name or different word.`,
+      spokenResponse: `I couldn't find any products matching "${groceryTerm}" on Kroger. What else would you like to try, or say "I'm done" when finished.`,
+      continueListening: true,
     });
   } catch (error: any) {
     console.error('Voice process error:', error);
@@ -182,6 +199,7 @@ export async function POST(request: Request) {
       type: 'ERROR',
       spokenResponse: "Sorry, I had trouble searching Kroger. Please try again.",
       error: error.message,
+      continueListening: false,
     }, { status: 500 });
   }
 }

@@ -37,6 +37,26 @@ export function useVoiceAssistant(
 
   const activeRecognitionRef = useRef<any>(null);
   const isListeningRef = useRef<boolean>(false);
+  const relistenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startListeningRef = useRef<() => void>(() => {});
+
+  const clearRelistenTimer = useCallback(() => {
+    if (relistenTimeoutRef.current) {
+      clearTimeout(relistenTimeoutRef.current);
+      relistenTimeoutRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Schedules the microphone to automatically re-open 400ms after the assistant
+   * finishes speaking so the user can confirm an item or add additional items hands-free.
+   */
+  const scheduleRelisten = useCallback(() => {
+    clearRelistenTimer();
+    relistenTimeoutRef.current = setTimeout(() => {
+      startListeningRef.current();
+    }, 400);
+  }, [clearRelistenTimer]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -118,6 +138,7 @@ export function useVoiceAssistant(
       });
 
       const data = await response.json();
+      const shouldContinueListening = isVoiceInput && Boolean(data.continueListening);
 
       if (data.type === 'CONFIRMATION_NEEDED' || data.type === 'OPTIONS_NEEDED') {
         setState(prev => ({
@@ -128,9 +149,9 @@ export function useVoiceAssistant(
           pendingConfirmation: data.pendingConfirmation,
         }));
 
-        if (isVoiceInput) {
+        if (shouldContinueListening) {
           speak(data.spokenResponse, () => {
-            setTimeout(() => startListening(), 400);
+            scheduleRelisten();
           });
         } else {
           speak(data.spokenResponse);
@@ -146,7 +167,13 @@ export function useVoiceAssistant(
         if (onItemAdded && data.addedItem) {
           onItemAdded(data.addedItem);
         }
-        speak(data.spokenResponse);
+        if (shouldContinueListening) {
+          speak(data.spokenResponse, () => {
+            scheduleRelisten();
+          });
+        } else {
+          speak(data.spokenResponse);
+        }
       } else {
         setState(prev => ({
           ...prev,
@@ -155,7 +182,13 @@ export function useVoiceAssistant(
           assistantSpeech: data.spokenResponse,
           pendingConfirmation: null,
         }));
-        speak(data.spokenResponse);
+        if (shouldContinueListening) {
+          speak(data.spokenResponse, () => {
+            scheduleRelisten();
+          });
+        } else {
+          speak(data.spokenResponse);
+        }
       }
     } catch (err: any) {
       console.error('Error processing query:', err);
@@ -166,10 +199,14 @@ export function useVoiceAssistant(
         assistantSpeech: "Sorry, I had trouble connecting to Kroger. Please try again.",
       }));
     }
-  }, [speak, onItemAdded, selectedStoreId]);
+  }, [speak, onItemAdded, selectedStoreId, scheduleRelisten]);
 
   const stopListening = useCallback(() => {
+    clearRelistenTimer();
     isListeningRef.current = false;
+    if (typeof window !== 'undefined') {
+      window.speechSynthesis?.cancel();
+    }
     if (activeRecognitionRef.current) {
       try {
         activeRecognitionRef.current.stop();
@@ -177,7 +214,7 @@ export function useVoiceAssistant(
       activeRecognitionRef.current = null;
     }
     setState(prev => ({ ...prev, status: 'idle' }));
-  }, []);
+  }, [clearRelistenTimer]);
 
   const startListening = useCallback(async () => {
     if (typeof window === 'undefined') return;
@@ -279,6 +316,16 @@ export function useVoiceAssistant(
       }));
     }
   }, [stopListening, processTranscript]);
+
+  useEffect(() => {
+    startListeningRef.current = startListening;
+  }, [startListening]);
+
+  useEffect(() => {
+    return () => {
+      clearRelistenTimer();
+    };
+  }, [clearRelistenTimer]);
 
   const submitTextQuery = useCallback((query: string) => {
     if (!query.trim()) return;
