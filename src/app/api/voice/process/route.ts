@@ -13,6 +13,7 @@ import { cookies } from 'next/headers';
 import { findUsualItem, recordOrder } from '@/lib/usuals';
 import { searchKrogerProducts, addToKrogerCart } from '@/lib/kroger';
 import {
+  getUserById,
   getValidKrogerTokenForUser,
   KROGER_TOKEN_COOKIE,
   recordUserCartItem,
@@ -45,9 +46,10 @@ const NEGATIVE_RESPONSES = [
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { transcript, pendingConfirmation } = body as {
+    const { transcript, pendingConfirmation, locationId } = body as {
       transcript: string;
       pendingConfirmation?: PendingConfirmation | null;
+      locationId?: string;
     };
 
     if (!transcript || !transcript.trim()) {
@@ -123,11 +125,14 @@ export async function POST(request: Request) {
       });
     }
 
-    // 2. Not in saved usuals: Search Kroger's live catalog
+    // 2. Not in saved usuals: Search Kroger's live catalog at the user's Home Store
     const cookieStore = await cookies();
-    const token = cookieStore.get('kroger_token')?.value;
+    const userId = cookieStore.get(USER_SESSION_COOKIE)?.value;
+    const token = cookieStore.get(KROGER_TOKEN_COOKIE)?.value;
+    const userProfile = userId ? await getUserById(userId) : null;
+    const storeLocationId = locationId || userProfile?.preferredStoreId;
 
-    const catalogMatches = await searchKrogerProducts(groceryTerm, undefined, token);
+    const catalogMatches = await searchKrogerProducts(groceryTerm, storeLocationId, token);
 
     if (catalogMatches && catalogMatches.length > 0) {
       // Multiple options available: return list for user selection

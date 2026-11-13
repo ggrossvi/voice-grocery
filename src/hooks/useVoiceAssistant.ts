@@ -20,7 +20,10 @@ interface VoiceAssistantState {
   isProcessing: boolean;
 }
 
-export function useVoiceAssistant(onItemAdded?: (item: UsualItem) => void) {
+export function useVoiceAssistant(
+  onItemAdded?: (item: UsualItem) => void,
+  selectedStoreId?: string
+) {
   const [state, setState] = useState<VoiceAssistantState>({
     status: 'idle',
     transcript: '',
@@ -110,6 +113,7 @@ export function useVoiceAssistant(onItemAdded?: (item: UsualItem) => void) {
         body: JSON.stringify({
           transcript: transcriptText,
           pendingConfirmation: currentConfirmation,
+          locationId: selectedStoreId,
         }),
       });
 
@@ -162,7 +166,7 @@ export function useVoiceAssistant(onItemAdded?: (item: UsualItem) => void) {
         assistantSpeech: "Sorry, I had trouble connecting to Kroger. Please try again.",
       }));
     }
-  }, [speak, onItemAdded]);
+  }, [speak, onItemAdded, selectedStoreId]);
 
   const stopListening = useCallback(() => {
     isListeningRef.current = false;

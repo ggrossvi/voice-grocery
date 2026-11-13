@@ -17,9 +17,14 @@ import { UsualItem, KrogerProduct } from '@/lib/types';
 interface VoiceAssistantHeroProps {
   onItemAdded: (item: UsualItem) => void;
   onOpenInstructions: () => void;
+  selectedStoreId?: string;
 }
 
-export function VoiceAssistantHero({ onItemAdded, onOpenInstructions }: VoiceAssistantHeroProps) {
+export function VoiceAssistantHero({
+  onItemAdded,
+  onOpenInstructions,
+  selectedStoreId,
+}: VoiceAssistantHeroProps) {
   const {
     status,
     transcript,
@@ -32,7 +37,7 @@ export function VoiceAssistantHero({ onItemAdded, onOpenInstructions }: VoiceAss
     submitTextQuery,
     confirmPendingItem,
     selectProductOption,
-  } = useVoiceAssistant(onItemAdded);
+  } = useVoiceAssistant(onItemAdded, selectedStoreId);
 
   const [typedInput, setTypedInput] = useState('');
 
@@ -229,7 +234,7 @@ export function VoiceAssistantHero({ onItemAdded, onOpenInstructions }: VoiceAss
         {pendingConfirmation && pendingConfirmation.options && pendingConfirmation.options.length > 0 && (
           <div style={{ marginTop: '16px' }}>
             <p style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--primary-cyan)', marginBottom: '10px' }}>
-              Live Options from Kroger:
+              Live Options from Your Home Store:
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {pendingConfirmation.options.map((option) => (

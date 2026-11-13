@@ -12,6 +12,7 @@ import {
   getUserActiveCartItems,
   getUserById,
   KROGER_TOKEN_COOKIE,
+  updateUserPreferredStore,
   USER_SESSION_COOKIE,
 } from '@/lib/auth';
 
@@ -59,6 +60,27 @@ export async function GET() {
     cartItems,
     cartReminder,
   });
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const cookieStore = await cookies();
+    const userId = cookieStore.get(USER_SESSION_COOKIE)?.value;
+    if (!userId) {
+      return NextResponse.json({ success: false, error: 'Not signed in' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { locationId, name, chain } = body;
+    if (!locationId) {
+      return NextResponse.json({ success: false, error: 'locationId is required' }, { status: 400 });
+    }
+
+    const updatedUser = await updateUserPreferredStore(userId, { locationId, name, chain });
+    return NextResponse.json({ success: true, user: updatedUser });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
 }
 
 export async function DELETE() {

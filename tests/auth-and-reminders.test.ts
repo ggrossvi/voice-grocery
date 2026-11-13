@@ -1,17 +1,24 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import {
   upsertGoogleUser,
   getUserById,
+  updateUserPreferredStore,
   linkKrogerAccountToUser,
   getValidKrogerTokenForUser,
   recordUserCartItem,
+  getUserActiveCartItems,
   getUsersNeedingCartReminders,
   markUserCartReminded,
+  removeTestData,
 } from '@/lib/auth';
 
 describe('Google Sign-In, Kroger Linking & Cart Reminders', () => {
   const testGoogleId = `google-sub-${Date.now()}`;
   const testEmail = `shopper-${Date.now()}@gmail.com`;
+
+  afterAll(async () => {
+    await removeTestData(testGoogleId);
+  });
 
   it('stores the Google Sign-In ID as userId along with email', async () => {
     const user = await upsertGoogleUser({
@@ -71,6 +78,29 @@ describe('Google Sign-In, Kroger Linking & Cart Reminders', () => {
     await markUserCartReminded(testGoogleId);
     const refreshedUser = await getUserById(testGoogleId);
     expect(refreshedUser?.lastCartRemindedAt).toBeDefined();
+  });
+
+  it('persists the user preferred Home Store (ID, name, chain)', async () => {
+    const updated = await updateUserPreferredStore(testGoogleId, {
+      locationId: '70500872',
+      name: 'University Village QFC',
+      chain: 'QFC',
+    });
+
+    expect(updated).not.toBeNull();
+    expect(updated?.preferredStoreId).toBe('70500872');
+    expect(updated?.preferredStoreName).toBe('University Village QFC');
+    expect(updated?.preferredStoreChain).toBe('QFC');
+  });
+
+  it('removes test user and associated cart items via removeTestData()', async () => {
+    await removeTestData(testGoogleId);
+
+    const deletedUser = await getUserById(testGoogleId);
+    expect(deletedUser).toBeNull();
+
+    const remainingCartItems = await getUserActiveCartItems(testGoogleId);
+    expect(remainingCartItems).toEqual([]);
   });
 });
 

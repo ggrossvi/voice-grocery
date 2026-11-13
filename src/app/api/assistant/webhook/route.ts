@@ -17,6 +17,7 @@ import { cookies } from 'next/headers';
 import { findUsualItem, recordOrder } from '@/lib/usuals';
 import { searchKrogerProducts, addToKrogerCart } from '@/lib/kroger';
 import {
+  getUserById,
   getValidKrogerTokenForUser,
   KROGER_TOKEN_COOKIE,
   recordUserCartItem,
@@ -70,6 +71,8 @@ async function handleAssistantRequest(rawItem: string) {
   const userId = cookieStore.get(USER_SESSION_COOKIE)?.value;
   const cookieToken = cookieStore.get(KROGER_TOKEN_COOKIE)?.value;
   const token = (await getValidKrogerTokenForUser(userId)) || cookieToken;
+  const userProfile = userId ? await getUserById(userId) : null;
+  const storeLocationId = userProfile?.preferredStoreId;
 
   if (usual) {
     // Add your usual item to the Kroger cart
@@ -87,8 +90,8 @@ async function handleAssistantRequest(rawItem: string) {
     };
   }
 
-  // 2. If not in usuals, search Kroger catalog and add top match
-  const matches = await searchKrogerProducts(itemTerm, undefined, token);
+  // 2. If not in usuals, search Kroger catalog at Home Store and add top match
+  const matches = await searchKrogerProducts(itemTerm, storeLocationId, token);
   if (matches.length > 0) {
     const topItem = matches[0];
     await addToKrogerCart(topItem.upc, 1, 'PICKUP', token);
