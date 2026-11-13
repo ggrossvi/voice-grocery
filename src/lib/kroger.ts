@@ -162,31 +162,113 @@ export async function searchKrogerProducts(
     const data = await response.json();
     const rawProducts = data.data || [];
 
-    return rawProducts.map((p: any) => {
-      const itemDetail = p.items?.[0] || {};
-      const priceDetail = itemDetail.price || {};
-
-      let imageUrl: string | undefined;
-      const frontImage = p.images?.find((img: any) => img.perspective === 'front') || p.images?.[0];
-      if (frontImage?.sizes?.length) {
-        const mediumSize = frontImage.sizes.find((s: any) => s.size === 'medium' || s.size === 'large') || frontImage.sizes[0];
-        imageUrl = mediumSize?.url;
-      }
-
-      return {
-        upc: p.upc,
-        description: p.description,
-        brand: p.brand || 'Kroger',
-        size: itemDetail.size || '',
-        price: priceDetail.regular || priceDetail.promo || undefined,
-        imageUrl: imageUrl,
-        category: p.categories?.[0] || '',
-        inStock: itemDetail.inventory?.stockLevel !== 'TEMPORARILY_OUT_OF_STOCK',
-      };
-    });
+    return rawProducts.map(mapRawKrogerProductToCatalogItem);
   } catch (error) {
     console.error('Error in searchKrogerProducts:', error);
     return [];
+  }
+}
+
+/**
+ * Normalizes a raw Kroger catalog product object (from GET /v1/products)
+ * into our clean, strongly-typed `KrogerProduct` shape.
+ */
+function mapRawKrogerProductToCatalogItem(p: any): KrogerProduct {
+  const itemDetail = p.items?.[0] || {};
+  const priceDetail = itemDetail.price || {};
+
+  let imageUrl: string | undefined;
+  const frontImage = p.images?.find((img: any) => img.perspective === 'front') || p.images?.[0];
+  if (frontImage?.sizes?.length) {
+    const mediumSize =
+      frontImage.sizes.find((s: any) => s.size === 'medium' || s.size === 'large') ||
+      frontImage.sizes[0];
+    imageUrl = mediumSize?.url;
+  }
+
+  return {
+    upc: p.upc,
+    description: p.description,
+    brand: p.brand || 'Kroger',
+    size: itemDetail.size || '',
+    price: priceDetail.regular || priceDetail.promo || undefined,
+    imageUrl: imageUrl,
+    category: p.categories?.[0] || '',
+    inStock: itemDetail.inventory?.stockLevel !== 'TEMPORARILY_OUT_OF_STOCK',
+  };
+}
+
+/**
+ * Normalizes a raw receipt or barcode number (10 to 13 digits, optionally containing
+ * spaces or dashes) into a standard 13-digit Kroger UPC string padded with leading zeros.
+ *
+ * Why this is needed:
+ * - Paper receipts and online order history often omit leading zeros (showing 10-12 digits).
+ * - Kroger's `/v1/products?filter.productId=` endpoint requires a 13-digit zero-padded UPC.
+ *
+ * Returns `null` if the cleaned input is not a valid 10-to-13 digit number.
+ */
+export function normalizeKrogerUpc(rawUpc: string): string | null {
+  const digitsOnly = rawUpc.replace(/[\s-]/g, '');
+  const isTenToThirteenDigits = /^\d{10,13}$/.test(digitsOnly);
+
+  if (!isTenToThirteenDigits) {
+    return null;
+  }
+
+  return digitsOnly.padStart(13, '0');
+}
+
+/**
+ * Looks up a single grocery item in the live Kroger catalog by its UPC (`filter.productId`).
+ *
+ * Passes the shopper's Home Store `locationId` when available so the returned product
+ * includes accurate local store pricing and stock status.
+ */
+export async function getKrogerProductByUpc(
+  rawUpc: string,
+  locationId?: string,
+  customerToken?: string
+): Promise<KrogerProduct | null> {
+  const normalizedUpc = normalizeKrogerUpc(rawUpc);
+  if (!normalizedUpc) {
+    return null;
+  }
+
+  try {
+    const token = customerToken || (await getClientCredentialsToken());
+
+    const url = new URL(`${APP_CONFIG.kroger.baseUrl}/v1/products`);
+    url.searchParams.set('filter.productId', normalizedUpc);
+
+    const storeLocation = locationId || APP_CONFIG.kroger.defaultLocationId;
+    if (storeLocation) {
+      url.searchParams.set('filter.locationId', storeLocation);
+    }
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.warn(`Kroger UPC lookup (${normalizedUpc}) returned ${response.status}:`, errText);
+      return null;
+    }
+
+    const data = await response.json();
+    const firstMatch = data.data?.[0];
+    if (!firstMatch) {
+      return null;
+    }
+
+    return mapRawKrogerProductToCatalogItem(firstMatch);
+  } catch (error) {
+    console.error(`Error in getKrogerProductByUpc (${normalizedUpc}):`, error);
+    return null;
   }
 }
 

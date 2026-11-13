@@ -9,8 +9,113 @@ import fs from 'fs';
 import path from 'path';
 import { FavoriteItem, KrogerProduct } from './types';
 import { getPrismaClient } from './prisma';
+import { normalizeKrogerUpc } from './kroger';
 
 const FAVORITES_FILE_PATH = path.join(process.cwd(), 'data', 'favorites.json');
+
+/**
+ * Packaging and filler words commonly found in Kroger product titles that
+ * shoppers rarely say out loud when ordering by voice.
+ */
+const PACKAGING_AND_FILLER_WORDS = new Set([
+  'tub',
+  'gallon',
+  'gal',
+  'carton',
+  'bottle',
+  'box',
+  'bag',
+  'pack',
+  'can',
+  'jar',
+  'container',
+  'pouch',
+  'oz',
+  'lb',
+  'ct',
+  'total',
+  'plain',
+  'nonfat',
+]);
+
+/**
+ * Parses a multi-line string of receipt/past-order UPCs into normalized 13-digit UPCs
+ * and optional custom spoken keywords.
+ *
+ * Supported line formats:
+ * - `0068954408301, greek yogurt`  (comma-separated)
+ * - `0001111041600 - milk`         (dash-separated)
+ * - `68954408302`                  (UPC only; spokenKeyword will be undefined)
+ *
+ * Blank lines and lines whose first token is not a valid 10-13 digit UPC are skipped.
+ */
+export function parseUpcImportText(
+  rawText: string
+): Array<{ upc: string; spokenKeyword?: string }> {
+  const lines = rawText.split(/\r?\n/);
+  const parsedEntries: Array<{ upc: string; spokenKeyword?: string }> = [];
+
+  for (const rawLine of lines) {
+    const trimmedLine = rawLine.trim();
+    if (!trimmedLine) continue;
+
+    // Split on the first comma or spaced hyphen (" - ") to separate the UPC from the optional keyword
+    const separatorMatch = trimmedLine.match(/^([^\s,]+)\s*(?:,|-|\s+-\s+)?\s*(.*)$/);
+    if (!separatorMatch) continue;
+
+    const rawUpcToken = separatorMatch[1].trim();
+    const rawKeywordToken = separatorMatch[2]?.trim() || '';
+
+    const normalizedUpc = normalizeKrogerUpc(rawUpcToken);
+    if (!normalizedUpc) continue;
+
+    parsedEntries.push({
+      upc: normalizedUpc,
+      spokenKeyword: rawKeywordToken ? rawKeywordToken.toLowerCase() : undefined,
+    });
+  }
+
+  return parsedEntries;
+}
+
+/**
+ * Derives a short, natural spoken trigger keyword from a full Kroger catalog product title
+ * when the shopper imports a bare UPC without specifying a custom keyword.
+ *
+ * Example:
+ * - Title: `"Fage® Total Plain Nonfat Greek Yogurt Tub"`, Brand: `"Fage"` -> `"greek yogurt"`
+ * - Title: `"Kroger® 2% Reduced Fat Milk Gallon"`, Brand: `"Kroger"`      -> `"reduced fat milk"`
+ */
+export function deriveDefaultKeyword(title: string, brand?: string): string {
+  const normalizedBrandWords = new Set(
+    (brand || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean)
+  );
+
+  // Strip trademark symbols and percentages, keep letters/spaces, and split into lowercase words
+  const meaningfulWords = title
+    .toLowerCase()
+    .replace(/[®™©]/g, '')
+    .replace(/\b\d+%?\b/g, '')
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/)
+    .filter(word => {
+      if (!word) return false;
+      if (normalizedBrandWords.has(word)) return false;
+      if (PACKAGING_AND_FILLER_WORDS.has(word)) return false;
+      return true;
+    });
+
+  if (meaningfulWords.length === 0) {
+    return title.split(/\s+/)[0]?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'item';
+  }
+
+  // Take the last 2–3 core product noun words (e.g., "greek yogurt" or "reduced fat milk")
+  return meaningfulWords.slice(-3).join(' ');
+}
 
 export function isFavoriteItem(item: KrogerProduct | FavoriteItem): item is FavoriteItem {
   return 'krogerUpc' in item;
