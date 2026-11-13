@@ -17,6 +17,7 @@ Before making changes:
 5. Follow `docs/CODING_STANDARDS.md` and `docs/SECURITY.md`.
 
 ## Planning and Approval
+- When we come up with a plan for a feature, add the plan items (with comments/explanations) to `PLAN.md`.
 - Explain the proposed solution before implementing significant changes.
 - Suggest specific tests that should be implemented to test a proposed feature before developing new features.
 - Present alternative approaches when meaningful.
@@ -62,7 +63,9 @@ After implementing an approved change, summarize:
 - Before creating any new branch, always remind the user to delete merged old branches and run `git checkout main && git pull origin main`.
 - Commit after each approved change.
 - Use extended, descriptive commit messages (a clear summary line followed by bullet points detailing what was added or changed).
+- Always show the user the full extended commit message for the changes (both when proposing a commit and after committing).
 - Do not commit until the user approves.
+- Never deploy using the Vercel CLI (`vercel` / `npx vercel`); all deployments must happen exclusively through GitHub so automated tests run before changes reach `main`.
 
 ## Security
 

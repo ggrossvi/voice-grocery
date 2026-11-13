@@ -12,16 +12,22 @@
  */
 
 import React from 'react';
-import { Plus, Flame } from 'lucide-react';
+import { Plus, Flame, FileDown } from 'lucide-react';
 import { FavoriteItem } from '@/lib/types';
 
 interface FavoritesListProps {
   favorites: FavoriteItem[];
   onQuickAdd: (item: FavoriteItem) => void;
+  onOpenImportModal?: () => void;
   isAddingToCart?: boolean;
 }
 
-export function FavoritesList({ favorites, onQuickAdd, isAddingToCart }: FavoritesListProps) {
+export function FavoritesList({
+  favorites,
+  onQuickAdd,
+  onOpenImportModal,
+  isAddingToCart,
+}: FavoritesListProps) {
   return (
     <section style={{ marginTop: '8px' }}>
       <div className="section-header">
@@ -29,9 +35,29 @@ export function FavoritesList({ favorites, onQuickAdd, isAddingToCart }: Favorit
           <h3 className="section-title">Your Favorites</h3>
           <p className="section-subtitle">Say any keyword to re-order your favorite brand</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#F59E0B', fontSize: '0.75rem', fontWeight: 600 }}>
-          <Flame size={14} />
-          <span>Smart Memory</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {onOpenImportModal && (
+            <button
+              type="button"
+              onClick={onOpenImportModal}
+              className="status-pill sandbox"
+              style={{
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '0.73rem',
+              }}
+              title="Import UPCs from a past Kroger or QFC receipt"
+            >
+              <FileDown size={13} style={{ color: 'var(--primary-cyan)' }} />
+              <span>Import Past Items</span>
+            </button>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#F59E0B', fontSize: '0.75rem', fontWeight: 600 }}>
+            <Flame size={14} />
+            <span>Smart Memory</span>
+          </div>
         </div>
       </div>
 

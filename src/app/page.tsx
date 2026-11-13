@@ -20,6 +20,7 @@ import { FavoritesList } from '@/components/FavoritesList';
 import { ActiveCartDrawer } from '@/components/ActiveCartDrawer';
 import { AssistantInstructionsModal } from '@/components/AssistantInstructionsModal';
 import { StoreSelectorModal } from '@/components/StoreSelectorModal';
+import { ImportFavoritesModal } from '@/components/ImportFavoritesModal';
 import { FavoriteItem, CartItem, KrogerProduct, KrogerStoreLocation, UserProfile } from '@/lib/types';
 
 /**
@@ -72,6 +73,7 @@ export default function Home() {
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [isAssistantModalOpen, setIsAssistantModalOpen] = useState(false);
   const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [selectedStore, setSelectedStore] = useState<KrogerStoreLocation | null>(null);
 
   // Load saved favorites, authenticated Google user + Kroger link status, and preferred store on mount
@@ -337,7 +339,18 @@ export default function Home() {
       <FavoritesList 
         favorites={favorites} 
         onQuickAdd={handleQuickAdd}
+        onOpenImportModal={() => setIsImportModalOpen(true)}
         isAddingToCart={isAddingToCart}
+      />
+
+      {/* Import Past Order Items Modal */}
+      <ImportFavoritesModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImportSuccess={() => {
+          fetchFavorites();
+        }}
+        selectedStoreId={selectedStore?.locationId || user?.preferredStoreId}
       />
 
       {/* Wake Word Guide Modal ("Hey Google" & "Hey Siri") */}
