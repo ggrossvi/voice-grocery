@@ -10,7 +10,7 @@
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { findUsualItem, recordOrder } from '@/lib/usuals';
+import { findFavoriteItem, recordFavoriteOrder } from '@/lib/favorites';
 import { searchKrogerProducts, addToKrogerCart } from '@/lib/kroger';
 import {
   getUserById,
@@ -79,7 +79,9 @@ export async function POST(request: Request) {
         const token = (await getValidKrogerTokenForUser(userId)) || cookieToken;
 
         await addToKrogerCart(upc, 1, 'PICKUP', token);
-        const savedStaple = await recordOrder(item, pendingConfirmation.keyword);
+        const savedFavorite = userId
+          ? await recordFavoriteOrder(item, pendingConfirmation.keyword, userId)
+          : undefined;
         if (userId) {
           await recordUserCartItem(userId, item, 1, 'PICKUP');
         }
@@ -87,7 +89,7 @@ export async function POST(request: Request) {
         return NextResponse.json({
           type: 'ITEM_ADDED',
           spokenResponse: `Added ${title} to your Kroger cart!`,
-          addedItem: savedStaple,
+          addedItem: savedFavorite,
           clearConfirmation: true,
         });
       } else if (isNegative) {
@@ -103,21 +105,26 @@ export async function POST(request: Request) {
     // Scenario 2: Search for an item (e.g. "milk", "yogurt", "apples")
     // -------------------------------------------------------------------------
     const groceryTerm = extractGroceryTerm(lowerTranscript);
+    const cookieStore = await cookies();
+    const userId = cookieStore.get(USER_SESSION_COOKIE)?.value;
+    const token = cookieStore.get(KROGER_TOKEN_COOKIE)?.value;
+    const userProfile = userId ? await getUserById(userId) : null;
+    const storeLocationId = locationId || userProfile?.preferredStoreId;
 
-    // 1. Check if user already has a saved "Usual Item" / Favorite
-    const usualMatch = await findUsualItem(groceryTerm);
+    // 1. Check if signed-in user already has a saved Favorite Item in Neon
+    const favoriteMatch = await findFavoriteItem(groceryTerm, userId);
 
-    if (usualMatch) {
-      const priceText = usualMatch.lastPrice ? ` for $${usualMatch.lastPrice.toFixed(2)}` : '';
-      const sizeText = usualMatch.size ? ` (${usualMatch.size})` : '';
-      const spokenResponse = `Found your usual: ${usualMatch.title}${sizeText}${priceText}. Would you like me to add it?`;
+    if (favoriteMatch) {
+      const priceText = favoriteMatch.lastPrice ? ` for $${favoriteMatch.lastPrice.toFixed(2)}` : '';
+      const sizeText = favoriteMatch.size ? ` (${favoriteMatch.size})` : '';
+      const spokenResponse = `Found your favorite: ${favoriteMatch.title}${sizeText}${priceText}. Would you like me to add it?`;
 
       return NextResponse.json({
         type: 'CONFIRMATION_NEEDED',
         spokenResponse: spokenResponse,
         pendingConfirmation: {
-          item: usualMatch,
-          isUsual: true,
+          item: favoriteMatch,
+          isFavorite: true,
           promptText: spokenResponse,
           action: 'ADD_TO_CART',
           keyword: groceryTerm,
@@ -125,13 +132,7 @@ export async function POST(request: Request) {
       });
     }
 
-    // 2. Not in saved usuals: Search Kroger's live catalog at the user's Home Store
-    const cookieStore = await cookies();
-    const userId = cookieStore.get(USER_SESSION_COOKIE)?.value;
-    const token = cookieStore.get(KROGER_TOKEN_COOKIE)?.value;
-    const userProfile = userId ? await getUserById(userId) : null;
-    const storeLocationId = locationId || userProfile?.preferredStoreId;
-
+    // 2. Not in saved favorites: Search Kroger's live catalog at the user's Home Store
     const catalogMatches = await searchKrogerProducts(groceryTerm, storeLocationId, token);
 
     if (catalogMatches && catalogMatches.length > 0) {
@@ -143,7 +144,7 @@ export async function POST(request: Request) {
           options: catalogMatches,
           pendingConfirmation: {
             options: catalogMatches,
-            isUsual: false,
+            isFavorite: false,
             promptText: `Select your preferred ${groceryTerm}:`,
             action: 'SELECT_OPTION',
             keyword: groceryTerm,
@@ -162,7 +163,7 @@ export async function POST(request: Request) {
         spokenResponse: spokenResponse,
         pendingConfirmation: {
           item: topMatch,
-          isUsual: false,
+          isFavorite: false,
           promptText: spokenResponse,
           action: 'ADD_TO_CART',
           keyword: groceryTerm,

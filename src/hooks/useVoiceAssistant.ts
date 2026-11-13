@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { VoiceStatus, PendingConfirmation, UsualItem, KrogerProduct } from '@/lib/types';
+import { VoiceStatus, PendingConfirmation, FavoriteItem, KrogerProduct } from '@/lib/types';
 
 interface VoiceAssistantState {
   status: VoiceStatus;
@@ -21,7 +21,7 @@ interface VoiceAssistantState {
 }
 
 export function useVoiceAssistant(
-  onItemAdded?: (item: UsualItem) => void,
+  onItemAdded?: (item: FavoriteItem | KrogerProduct) => void,
   selectedStoreId?: string
 ) {
   const [state, setState] = useState<VoiceAssistantState>({
@@ -309,19 +309,19 @@ export function useVoiceAssistant(
       });
 
       const data = await response.json();
-      if (data.success && data.item) {
+      if (data.success) {
         setState(prev => ({
           ...prev,
           status: 'idle',
           isProcessing: false,
           pendingConfirmation: null,
-          assistantSpeech: `Added ${product.description} to your Kroger cart and saved it as your usual ${keyword}!`,
+          assistantSpeech: `Added ${product.description} to your Kroger cart and saved it as your favorite ${keyword}!`,
         }));
 
         if (onItemAdded) {
-          onItemAdded(data.item);
+          onItemAdded(data.item || product);
         }
-        speak(`Added ${product.description} to your Kroger cart and saved it as your usual!`);
+        speak(`Added ${product.description} to your Kroger cart and saved it as your favorite!`);
       }
     } catch (err) {
       console.error('Failed to add selected option:', err);

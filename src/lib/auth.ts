@@ -15,8 +15,8 @@ import path from 'path';
 import { APP_CONFIG } from './config';
 import { getPrismaClient } from './prisma';
 import { refreshKrogerToken } from './kroger';
-import { CartItem, CartReminderSummary, KrogerProduct, UserProfile, UsualItem } from './types';
-import { isUsualItem } from './usuals';
+import { CartItem, CartReminderSummary, FavoriteItem, KrogerProduct, UserProfile } from './types';
+import { isFavoriteItem, readLocalFavorites, writeLocalFavorites } from './favorites';
 
 export const USER_SESSION_COOKIE = 'vg_user_id';
 export const KROGER_TOKEN_COOKIE = 'kroger_token';
@@ -442,13 +442,13 @@ export async function getValidKrogerTokenForUser(userId?: string): Promise<strin
  */
 export async function recordUserCartItem(
   userId: string,
-  item: KrogerProduct | UsualItem,
+  item: KrogerProduct | FavoriteItem,
   quantity: number = 1,
   modality: 'PICKUP' | 'DELIVERY' = 'PICKUP'
 ): Promise<CartItem> {
-  const upc = isUsualItem(item) ? item.krogerUpc : item.upc;
-  const title = isUsualItem(item) ? item.title : item.description;
-  const price = isUsualItem(item) ? item.lastPrice : item.price;
+  const upc = isFavoriteItem(item) ? item.krogerUpc : item.upc;
+  const title = isFavoriteItem(item) ? item.title : item.description;
+  const price = isFavoriteItem(item) ? item.lastPrice : item.price;
   const now = new Date();
 
   const prisma = getPrismaClient();
@@ -710,23 +710,20 @@ export async function removeTestData(userId: string): Promise<void> {
   if (prisma) {
     try {
       await prisma.user.deleteMany({
-        where: {
-          OR: [{ id: userId }, { id: { startsWith: 'google-sub-' } }],
-        },
+        where: { id: userId },
       });
     } catch (error) {
       console.error('Prisma error removing test user data, falling back to local cleanup:', error);
     }
   }
 
-  const users = readLocalUsers().filter(
-    u => u.id !== userId && !u.id.startsWith('google-sub-')
-  );
+  const users = readLocalUsers().filter(u => u.id !== userId);
   writeLocalUsers(users);
 
-  const cartItems = readLocalCartItems().filter(
-    c => c.userId !== userId && !c.userId.startsWith('google-sub-')
-  );
+  const cartItems = readLocalCartItems().filter(c => c.userId !== userId);
   writeLocalCartItems(cartItems);
+
+  const favorites = readLocalFavorites().filter(f => f.userId !== userId);
+  writeLocalFavorites(favorites);
 }
 

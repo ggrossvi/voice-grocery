@@ -56,6 +56,7 @@ After implementing an approved change, summarize:
 
 ## Git
 - Always suggest separate feature branches when a request spans multiple features.
+- Before creating any new branch, always remind the user to delete merged old branches and run `git checkout main && git pull origin main`.
 - Commit after each approved change.
 - Use extended, descriptive commit messages (a clear summary line followed by bullet points detailing what was added or changed).
 - Do not commit until the user approves.

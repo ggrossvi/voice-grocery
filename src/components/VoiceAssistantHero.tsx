@@ -12,10 +12,10 @@
 import React, { useState } from 'react';
 import { Mic, Volume2, Check, X, Sparkles, HelpCircle, Send, AlertCircle, Loader2, ShoppingCart } from 'lucide-react';
 import { useVoiceAssistant } from '@/hooks/useVoiceAssistant';
-import { UsualItem, KrogerProduct } from '@/lib/types';
+import { FavoriteItem, KrogerProduct } from '@/lib/types';
 
 interface VoiceAssistantHeroProps {
-  onItemAdded: (item: UsualItem) => void;
+  onItemAdded: (item: FavoriteItem | KrogerProduct) => void;
   onOpenInstructions: () => void;
   selectedStoreId?: string;
 }
@@ -67,11 +67,11 @@ export function VoiceAssistantHero({
     }
   };
 
-  const getItemTitle = (item: KrogerProduct | UsualItem) => {
+  const getItemTitle = (item: KrogerProduct | FavoriteItem) => {
     return 'description' in item ? item.description : item.title;
   };
 
-  const getItemPrice = (item: KrogerProduct | UsualItem) => {
+  const getItemPrice = (item: KrogerProduct | FavoriteItem) => {
     const priceVal = 'lastPrice' in item ? item.lastPrice : ('price' in item ? item.price : undefined);
     return priceVal ? `$${priceVal.toFixed(2)}` : '$3.29';
   };

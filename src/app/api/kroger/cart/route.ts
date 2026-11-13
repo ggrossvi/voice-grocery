@@ -9,7 +9,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { addToKrogerCart } from '@/lib/kroger';
-import { recordOrder } from '@/lib/usuals';
+import { recordFavoriteOrder } from '@/lib/favorites';
 import {
   getValidKrogerTokenForUser,
   KROGER_TOKEN_COOKIE,
@@ -36,8 +36,10 @@ export async function POST(request: Request) {
     // Call Kroger Cart API (PUT /v1/cart/add)
     const cartResult = await addToKrogerCart(upc, quantity, modality, token);
 
-    // Save to our app's Usual Items memory engine
-    const updatedUsual = await recordOrder(item, spokenKeyword);
+    // Save to the signed-in user's Favorites in Neon
+    const updatedFavorite = userId
+      ? await recordFavoriteOrder(item, spokenKeyword, userId)
+      : null;
 
     // If signed in with Google, record item against userId & email for cart reminders
     const cartEntry = userId
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       message: cartResult.message,
-      item: updatedUsual,
+      item: updatedFavorite,
       cartEntry,
     });
   } catch (error: any) {
