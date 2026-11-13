@@ -16,6 +16,8 @@ model User {
   name                 String?
   image                String?
   preferredStoreId     String?     @default("70500872")
+  preferredStoreName   String?
+  preferredStoreChain  String?
 
   /// Linked Kroger OAuth account credentials
   krogerProfileId      String?

@@ -18,6 +18,7 @@ Before making changes:
 
 ## Planning and Approval
 - Explain the proposed solution before implementing significant changes.
+- Suggest specific tests that should be implemented to test a proposed feature before developing new features.
 - Present alternative approaches when meaningful.
 - Identify files that will be modified.
 - Explain potential risks or breaking changes.
@@ -34,7 +35,7 @@ Before making changes:
 - Never hardcode credentials or API keys.
 
 ## Testing
-- Write tests for new business logic.
+- Write tests for new business logic before writing business logic code.
 - Run relevant existing tests after modifications.
 - Do not claim tests passed unless they actually ran.
 - Explain failures and unresolved issues.
@@ -54,8 +55,9 @@ After implementing an approved change, summarize:
 5. Recommended next steps
 
 ## Git
+- Always suggest separate feature branches when a request spans multiple features.
 - Commit after each approved change.
-- Use concise, descriptive commit messages.
+- Use extended, descriptive commit messages (a clear summary line followed by bullet points detailing what was added or changed).
 - Do not commit until the user approves.
 
 ## Security

@@ -58,6 +58,23 @@ export default function Home() {
           setCartItems(data.cartItems);
         }
         setCartReminder(data.cartReminder || null);
+
+        // If user has a preferred store saved in Neon, sync it to UI
+        if (data.user.preferredStoreId) {
+          setSelectedStore(prev => {
+            if (prev && prev.locationId === data.user.preferredStoreId) return prev;
+            const syncedStore: KrogerStoreLocation = {
+              locationId: data.user.preferredStoreId,
+              name: data.user.preferredStoreName || `Store #${data.user.preferredStoreId}`,
+              chain: data.user.preferredStoreChain || 'QFC',
+              address: { addressLine1: '', city: '', state: '', zipCode: '' },
+            };
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('kroger_preferred_store', JSON.stringify(syncedStore));
+            }
+            return syncedStore;
+          });
+        }
       } else {
         setUser(null);
         setCartReminder(null);
@@ -89,10 +106,29 @@ export default function Home() {
     }
   };
 
-  const handleSelectStore = (store: KrogerStoreLocation) => {
+  const handleSelectStore = async (store: KrogerStoreLocation) => {
     setSelectedStore(store);
     if (typeof window !== 'undefined') {
       localStorage.setItem('kroger_preferred_store', JSON.stringify(store));
+    }
+
+    // Persist preferred Home Store to Neon if signed in
+    try {
+      const res = await fetch('/api/auth/me', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId: store.locationId,
+          name: store.name,
+          chain: store.chain,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.user) {
+        setUser(data.user);
+      }
+    } catch (err) {
+      console.error('Failed to save preferred store to database:', err);
     }
   };
 
@@ -258,6 +294,7 @@ export default function Home() {
       <VoiceAssistantHero 
         onItemAdded={handleItemAdded} 
         onOpenInstructions={() => setIsAssistantModalOpen(true)}
+        selectedStoreId={selectedStore?.locationId || user?.preferredStoreId}
       />
 
       {/* Active Session Cart Drawer */}

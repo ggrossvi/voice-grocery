@@ -103,6 +103,8 @@ export interface UserProfile {
   name?: string;
   image?: string;
   preferredStoreId?: string;
+  preferredStoreName?: string;
+  preferredStoreChain?: string;
   krogerConnected: boolean;
   krogerConnectedAt?: string;
   cartRemindersEnabled: boolean;

@@ -30,6 +30,8 @@ interface StoredUserRecord {
   name?: string;
   image?: string;
   preferredStoreId?: string;
+  preferredStoreName?: string;
+  preferredStoreChain?: string;
   krogerProfileId?: string;
   krogerAccessToken?: string;
   krogerRefreshToken?: string;
@@ -105,6 +107,8 @@ function toUserProfile(record: {
   name?: string | null;
   image?: string | null;
   preferredStoreId?: string | null;
+  preferredStoreName?: string | null;
+  preferredStoreChain?: string | null;
   krogerAccessToken?: string | null;
   krogerRefreshToken?: string | null;
   krogerConnectedAt?: Date | string | null;
@@ -121,6 +125,8 @@ function toUserProfile(record: {
     name: record.name ?? undefined,
     image: record.image ?? undefined,
     preferredStoreId: record.preferredStoreId ?? undefined,
+    preferredStoreName: record.preferredStoreName ?? undefined,
+    preferredStoreChain: record.preferredStoreChain ?? undefined,
     krogerConnected: Boolean(record.krogerAccessToken || record.krogerRefreshToken),
     krogerConnectedAt: toIso(record.krogerConnectedAt),
     cartRemindersEnabled: record.cartRemindersEnabled,
@@ -280,6 +286,51 @@ export async function getUserById(userId: string): Promise<UserProfile | null> {
 }
 
 /**
+ * Updates a signed-in user's preferred Home Store in Neon Postgres.
+ */
+export async function updateUserPreferredStore(
+  userId: string,
+  store: {
+    locationId: string;
+    name?: string;
+    chain?: string;
+  }
+): Promise<UserProfile | null> {
+  if (!userId || !store.locationId) return null;
+
+  const prisma = getPrismaClient();
+  if (prisma) {
+    try {
+      const updated = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          preferredStoreId: store.locationId,
+          ...(store.name !== undefined ? { preferredStoreName: store.name } : {}),
+          ...(store.chain !== undefined ? { preferredStoreChain: store.chain } : {}),
+        },
+      });
+      return toUserProfile(updated);
+    } catch (error) {
+      console.error('Prisma error updating preferred store, falling back to local storage:', error);
+    }
+  }
+
+  const users = readLocalUsers();
+  const idx = users.findIndex(u => u.id === userId);
+  if (idx < 0) return null;
+
+  users[idx] = {
+    ...users[idx],
+    preferredStoreId: store.locationId,
+    preferredStoreName: store.name ?? users[idx].preferredStoreName,
+    preferredStoreChain: store.chain ?? users[idx].preferredStoreChain,
+    updatedAt: new Date().toISOString(),
+  };
+  writeLocalUsers(users);
+  return toUserProfile(users[idx]);
+}
+
+/**
  * Links a Kroger OAuth account (access & refresh tokens) to a signed-in Google User.
  */
 export async function linkKrogerAccountToUser(
@@ -353,7 +404,9 @@ export async function getValidKrogerTokenForUser(userId?: string): Promise<strin
     } catch (error) {
       console.error('Prisma error getting Kroger token, falling back to local storage:', error);
     }
-  } else {
+  }
+
+  if (!accessToken) {
     const users = readLocalUsers();
     const user = users.find(u => u.id === userId);
     if (user) {
@@ -643,6 +696,37 @@ export async function markUserCartReminded(userId: string): Promise<void> {
       item.remindedAt = now.toISOString();
     }
   }
+  writeLocalCartItems(cartItems);
+}
+
+/**
+ * Removes synthetic test user data (and cascaded CartItems / UsualItems)
+ * created during automated test runs so neither Neon nor local JSON is polluted.
+ */
+export async function removeTestData(userId: string): Promise<void> {
+  if (!userId) return;
+
+  const prisma = getPrismaClient();
+  if (prisma) {
+    try {
+      await prisma.user.deleteMany({
+        where: {
+          OR: [{ id: userId }, { id: { startsWith: 'google-sub-' } }],
+        },
+      });
+    } catch (error) {
+      console.error('Prisma error removing test user data, falling back to local cleanup:', error);
+    }
+  }
+
+  const users = readLocalUsers().filter(
+    u => u.id !== userId && !u.id.startsWith('google-sub-')
+  );
+  writeLocalUsers(users);
+
+  const cartItems = readLocalCartItems().filter(
+    c => c.userId !== userId && !c.userId.startsWith('google-sub-')
+  );
   writeLocalCartItems(cartItems);
 }
 
