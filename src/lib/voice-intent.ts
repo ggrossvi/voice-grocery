@@ -88,6 +88,25 @@ function normalizeSpokenText(spokenText: string): string {
 }
 
 /**
+ * Common compound grocery product phrases containing the word "and"
+ * that must not be split into separate items.
+ */
+const COMPOUND_PRODUCT_PHRASES = [
+  'mac and cheese',
+  'macaroni and cheese',
+  'half and half',
+  'salt and vinegar',
+  'salt and pepper',
+  'pork and beans',
+  'cookies and cream',
+  'sweet and sour',
+  'bread and butter',
+  'peaches and cream',
+  'strawberries and cream',
+  'oil and vinegar',
+];
+
+/**
  * Strips conversational prefixes ("can you add"), containers ("a gallon of"),
  * and suffixes ("to my cart") to isolate the core grocery search term.
  */
@@ -105,6 +124,78 @@ export function extractGroceryTerm(spokenText: string): string {
   }
 
   return cleaned.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Splits a naturally spoken sentence into individual grocery items while
+ * protecting compound items that contain "and" (e.g. "mac and cheese", "half and half").
+ *
+ * Example:
+ *   "I want spinach, eggs and brussel sprouts" -> ['spinach', 'eggs', 'brussel sprouts']
+ *   "mac and cheese, hot dogs and buns"        -> ['mac and cheese', 'hot dogs', 'buns']
+ */
+export function splitSpokenGroceryList(spokenText: string): string[] {
+  if (!spokenText || !spokenText.trim()) {
+    return [];
+  }
+
+  // 1. Remove leading intent prefixes and trailing destination suffixes
+  let cleaned = spokenText.toLowerCase().trim();
+  for (const pattern of CLEANUP_PATTERNS) {
+    cleaned = cleaned.replace(pattern, '').trim();
+  }
+
+  if (!cleaned) {
+    return [];
+  }
+
+  // 2. Protect compound items containing "and" with temporary tokens
+  const protectedMap = new Map<string, string>();
+  COMPOUND_PRODUCT_PHRASES.forEach((phrase, index) => {
+    if (cleaned.includes(phrase)) {
+      const placeholder = `__COMPOUND_ITEM_${index}__`;
+      protectedMap.set(placeholder, phrase);
+      cleaned = cleaned.replaceAll(phrase, placeholder);
+    }
+  });
+
+  // 3. Normalize natural speech list delimiters
+  // First collapse ellipses and stutters like "and... and", ", and,", "plus and"
+  let delimited = cleaned
+    .replace(/\.{2,}/g, ' ')
+    .replace(/\s+(and|plus|also|as well as|then)(\s+(and|plus|also|as well as|then))+/gi, ' $1 ')
+    .replace(/[,;]+/g, '|')
+    .replace(/\s+(and|plus|also|as well as|then)\s+/gi, '|')
+    // Handle repeated connectors or double delimiters like "| |"
+    .replace(/\|\s*\|+/g, '|');
+
+  // 4. Split by delimiter, restore protected phrases, and clean each item
+  const rawSegments = delimited.split('|');
+  const items: string[] = [];
+
+  for (const segment of rawSegments) {
+    let restored = segment;
+    for (const [placeholder, originalPhrase] of protectedMap.entries()) {
+      restored = restored.replaceAll(placeholder, originalPhrase);
+    }
+
+    // Clean trailing or leading connector artifacts
+    restored = restored
+      .replace(/^(and|plus|also|then)\s+/i, '')
+      .replace(/\s+(and|plus|also|then)$/i, '')
+      .trim();
+
+    const itemTerm = extractGroceryTerm(restored);
+    // Ignore empty tokens, loose connector words, or cart phrases spoken alone
+    if (
+      itemTerm &&
+      !/^(and|plus|also|then|as well as|to my cart|in my cart|to cart)$/i.test(itemTerm)
+    ) {
+      items.push(itemTerm);
+    }
+  }
+
+  return items;
 }
 
 /**
