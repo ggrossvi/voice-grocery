@@ -32,9 +32,10 @@ export interface KrogerProduct {
   inStock?: boolean;
 }
 
-// Represents a saved "Usual Item" / staple in the local database
-export interface UsualItem {
+// Represents a saved "Favorite Item" in the database tied to a signed-in userId
+export interface FavoriteItem {
   id: string;
+  userId: string;
   spokenKeyword: string;
   krogerUpc: string;
   title: string;
@@ -44,7 +45,7 @@ export interface UsualItem {
   imageUrl?: string;
   orderCount: number;
   lastOrderedAt: string;
-  isStaple: boolean;
+  isFavorite: boolean;
 }
 
 // Request payload sent to Kroger Cart API (PUT /v1/cart/add)
@@ -78,11 +79,11 @@ export type VoiceStatus =
   | 'speaking'
   | 'error';
 
-// Pending confirmation object (supports single staple or multiple catalog choices)
+// Pending confirmation object (supports single favorite or multiple catalog choices)
 export interface PendingConfirmation {
-  item?: KrogerProduct | UsualItem;
+  item?: KrogerProduct | FavoriteItem;
   options?: KrogerProduct[];
-  isUsual: boolean;
+  isFavorite: boolean;
   promptText: string;
   action: 'ADD_TO_CART' | 'SELECT_OPTION';
   keyword?: string;
@@ -93,7 +94,7 @@ export interface VoiceMessage {
   sender: 'user' | 'assistant';
   text: string;
   timestamp: string;
-  suggestedItem?: KrogerProduct | UsualItem;
+  suggestedItem?: KrogerProduct | FavoriteItem;
 }
 
 // Authenticated user profile keyed by Google Sign-In ID

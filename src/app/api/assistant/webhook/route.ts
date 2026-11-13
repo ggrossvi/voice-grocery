@@ -14,7 +14,7 @@
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { findUsualItem, recordOrder } from '@/lib/usuals';
+import { findFavoriteItem, recordFavoriteOrder } from '@/lib/favorites';
 import { searchKrogerProducts, addToKrogerCart } from '@/lib/kroger';
 import {
   getUserById,
@@ -64,9 +64,6 @@ async function handleAssistantRequest(rawItem: string) {
     };
   }
 
-  // 1. Check your "Usual Items" database first
-  const usual = await findUsualItem(itemTerm);
-
   const cookieStore = await cookies();
   const userId = cookieStore.get(USER_SESSION_COOKIE)?.value;
   const cookieToken = cookieStore.get(KROGER_TOKEN_COOKIE)?.value;
@@ -74,28 +71,33 @@ async function handleAssistantRequest(rawItem: string) {
   const userProfile = userId ? await getUserById(userId) : null;
   const storeLocationId = userProfile?.preferredStoreId;
 
-  if (usual) {
-    // Add your usual item to the Kroger cart
-    await addToKrogerCart(usual.krogerUpc, 1, 'PICKUP', token);
-    await recordOrder(usual);
+  // 1. Check your "Favorites" database first
+  const favorite = await findFavoriteItem(itemTerm, userId);
+
+  if (favorite) {
+    // Add your favorite item to the Kroger cart
+    await addToKrogerCart(favorite.krogerUpc, 1, 'PICKUP', token);
     if (userId) {
-      await recordUserCartItem(userId, usual, 1, 'PICKUP');
+      await recordFavoriteOrder(favorite, undefined, userId);
+      await recordUserCartItem(userId, favorite, 1, 'PICKUP');
     }
 
-    const price = usual.lastPrice ? ` for $${usual.lastPrice.toFixed(2)}` : '';
+    const price = favorite.lastPrice ? ` for $${favorite.lastPrice.toFixed(2)}` : '';
     return {
       success: true,
-      item: usual,
-      spokenText: `Added your usual ${usual.title}${price} to your Kroger cart.`,
+      item: favorite,
+      spokenText: `Added your favorite ${favorite.title}${price} to your Kroger cart.`,
     };
   }
 
-  // 2. If not in usuals, search Kroger catalog at Home Store and add top match
+  // 2. If not in favorites, search Kroger catalog at Home Store and add top match
   const matches = await searchKrogerProducts(itemTerm, storeLocationId, token);
   if (matches.length > 0) {
     const topItem = matches[0];
     await addToKrogerCart(topItem.upc, 1, 'PICKUP', token);
-    const savedStaple = await recordOrder(topItem, itemTerm);
+    const savedFavorite = userId
+      ? await recordFavoriteOrder(topItem, itemTerm, userId)
+      : null;
     if (userId) {
       await recordUserCartItem(userId, topItem, 1, 'PICKUP');
     }
@@ -103,7 +105,7 @@ async function handleAssistantRequest(rawItem: string) {
     const price = topItem.price ? ` for $${topItem.price.toFixed(2)}` : '';
     return {
       success: true,
-      item: savedStaple,
+      item: savedFavorite,
       spokenText: `Found and added ${topItem.description}${price} to your Kroger cart.`,
     };
   }

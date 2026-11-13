@@ -31,22 +31,22 @@ model User {
   lastCartRemindedAt   DateTime?
   cartRemindersEnabled Boolean     @default(true)
 
-  createdAt            DateTime    @default(now())
-  updatedAt            DateTime    @updatedAt
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 
-  usualItems           UsualItem[]
+  favoriteItems        FavoriteItem[]
   cartItems            CartItem[]
 }
 
-/// Personal "Usual Items" & Staples memory
-model UsualItem {
+/// Personal "Favorite Items" memory tied to a signed-in Google User ID
+model FavoriteItem {
   id            String   @id @default(cuid())
-  /// Optional link to Google User ID (null for shared/guest default staples)
-  userId        String?
-  user          User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Required link to signed-in Google User ID
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   spokenKeyword String
-  krogerUpc     String   @unique
+  krogerUpc     String
   title         String
   brand         String?
   size          String?
@@ -54,8 +54,9 @@ model UsualItem {
   imageUrl      String?
   orderCount    Int      @default(1)
   lastOrderedAt DateTime @default(now())
-  isStaple      Boolean  @default(true)
+  isFavorite    Boolean  @default(true)
 
+  @@unique([userId, krogerUpc])
   @@index([userId])
 }
 

@@ -16,14 +16,56 @@
 import React, { useState, useEffect } from 'react';
 import { ShoppingBag, MapPin, UserCheck, Link2, Bell, LogOut } from 'lucide-react';
 import { VoiceAssistantHero } from '@/components/VoiceAssistantHero';
-import { StaplesList } from '@/components/StaplesList';
+import { FavoritesList } from '@/components/FavoritesList';
 import { ActiveCartDrawer } from '@/components/ActiveCartDrawer';
 import { AssistantInstructionsModal } from '@/components/AssistantInstructionsModal';
 import { StoreSelectorModal } from '@/components/StoreSelectorModal';
-import { UsualItem, CartItem, KrogerStoreLocation, UserProfile } from '@/lib/types';
+import { FavoriteItem, CartItem, KrogerProduct, KrogerStoreLocation, UserProfile } from '@/lib/types';
+
+/**
+ * Type guard that checks whether a grocery item is a saved FavoriteItem (from Neon)
+ * versus a live KrogerProduct (from the Kroger catalog API).
+ *
+ * FavoriteItem always has a required `krogerUpc` field, whereas KrogerProduct uses `upc`.
+ */
+function isSavedFavorite(item: FavoriteItem | KrogerProduct): item is FavoriteItem {
+  return 'krogerUpc' in item;
+}
+
+/**
+ * Normalizes either a saved FavoriteItem or a live KrogerProduct into a CartItem
+ * so the ActiveCartDrawer can display it consistently.
+ */
+function buildCartItemFromProduct(item: FavoriteItem | KrogerProduct): CartItem {
+  if (isSavedFavorite(item)) {
+    return {
+      id: `cart-${Date.now()}`,
+      upc: item.krogerUpc,
+      title: item.title,
+      brand: item.brand,
+      size: item.size,
+      price: item.lastPrice,
+      imageUrl: item.imageUrl,
+      quantity: 1,
+      addedAt: new Date().toISOString(),
+    };
+  }
+
+  return {
+    id: `cart-${Date.now()}`,
+    upc: item.upc,
+    title: item.description,
+    brand: item.brand,
+    size: item.size,
+    price: item.price,
+    imageUrl: item.imageUrl,
+    quantity: 1,
+    addedAt: new Date().toISOString(),
+  };
+}
 
 export default function Home() {
-  const [staples, setStaples] = useState<UsualItem[]>([]);
+  const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [cartReminder, setCartReminder] = useState<string | null>(null);
@@ -32,9 +74,9 @@ export default function Home() {
   const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
   const [selectedStore, setSelectedStore] = useState<KrogerStoreLocation | null>(null);
 
-  // Load saved staples, authenticated Google user + Kroger link status, and preferred store on mount
+  // Load saved favorites, authenticated Google user + Kroger link status, and preferred store on mount
   useEffect(() => {
-    fetchStaples();
+    fetchFavorites();
     fetchAuthSession();
 
     // Check localStorage for saved store
@@ -88,21 +130,22 @@ export default function Home() {
     try {
       await fetch('/api/auth/me', { method: 'DELETE' });
       setUser(null);
+      setFavorites([]);
       setCartReminder(null);
     } catch (err) {
       console.error('Sign out error:', err);
     }
   };
 
-  const fetchStaples = async () => {
+  const fetchFavorites = async () => {
     try {
-      const res = await fetch('/api/usuals');
+      const res = await fetch('/api/favorites');
       const data = await res.json();
       if (data.items) {
-        setStaples(data.items);
+        setFavorites(data.items);
       }
     } catch (err) {
-      console.error('Failed to load staples:', err);
+      console.error('Failed to load favorites:', err);
     }
   };
 
@@ -132,18 +175,8 @@ export default function Home() {
     }
   };
 
-  const handleItemAdded = (item: UsualItem) => {
-    const newCartItem: CartItem = {
-      id: `cart-${Date.now()}`,
-      upc: item.krogerUpc,
-      title: item.title,
-      brand: item.brand,
-      size: item.size,
-      price: item.lastPrice,
-      imageUrl: item.imageUrl,
-      quantity: 1,
-      addedAt: new Date().toISOString(),
-    };
+  const handleItemAdded = (item: FavoriteItem | KrogerProduct) => {
+    const newCartItem = buildCartItemFromProduct(item);
     setCartItems(prev => {
       const updated = [newCartItem, ...prev];
       if (user) {
@@ -151,10 +184,10 @@ export default function Home() {
       }
       return updated;
     });
-    fetchStaples();
+    fetchFavorites();
   };
 
-  const handleQuickAdd = async (item: UsualItem) => {
+  const handleQuickAdd = async (item: FavoriteItem) => {
     setIsAddingToCart(true);
     try {
       const response = await fetch('/api/kroger/cart', {
@@ -300,9 +333,9 @@ export default function Home() {
       {/* Active Session Cart Drawer */}
       <ActiveCartDrawer items={cartItems} />
 
-      {/* Staples & Usual Items Memory Grid */}
-      <StaplesList 
-        staples={staples} 
+      {/* Personal Favorites Memory Grid */}
+      <FavoritesList 
+        favorites={favorites} 
         onQuickAdd={handleQuickAdd}
         isAddingToCart={isAddingToCart}
       />

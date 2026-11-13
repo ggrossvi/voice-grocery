@@ -12,10 +12,10 @@
 import React, { useState } from 'react';
 import { Mic, Volume2, Check, X, Sparkles, HelpCircle, Send, AlertCircle, Loader2, ShoppingCart } from 'lucide-react';
 import { useVoiceAssistant } from '@/hooks/useVoiceAssistant';
-import { UsualItem, KrogerProduct } from '@/lib/types';
+import { FavoriteItem, KrogerProduct } from '@/lib/types';
 
 interface VoiceAssistantHeroProps {
-  onItemAdded: (item: UsualItem) => void;
+  onItemAdded: (item: FavoriteItem | KrogerProduct) => void;
   onOpenInstructions: () => void;
   selectedStoreId?: string;
 }
@@ -67,12 +67,23 @@ export function VoiceAssistantHero({
     }
   };
 
-  const getItemTitle = (item: KrogerProduct | UsualItem) => {
-    return 'description' in item ? item.description : item.title;
+  /**
+   * Returns the display title for either a saved FavoriteItem (`title`)
+   * or a live KrogerProduct (`description`).
+   */
+  const getItemTitle = (item: KrogerProduct | FavoriteItem): string => {
+    if ('krogerUpc' in item) {
+      return item.title;
+    }
+    return item.description;
   };
 
-  const getItemPrice = (item: KrogerProduct | UsualItem) => {
-    const priceVal = 'lastPrice' in item ? item.lastPrice : ('price' in item ? item.price : undefined);
+  /**
+   * Formats the dollar price for either a saved FavoriteItem (`lastPrice`)
+   * or a live KrogerProduct (`price`).
+   */
+  const getItemPrice = (item: KrogerProduct | FavoriteItem): string => {
+    const priceVal = 'krogerUpc' in item ? item.lastPrice : item.price;
     return priceVal ? `$${priceVal.toFixed(2)}` : '$3.29';
   };
 
