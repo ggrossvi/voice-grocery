@@ -5,7 +5,7 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  directUrl = env("DATABASE_DIRECT_URL_UNPOOLED")
 }
 
 /// User account keyed by Google Sign-In ID (`sub`)
