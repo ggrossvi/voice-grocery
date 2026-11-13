@@ -22,6 +22,48 @@ import { AssistantInstructionsModal } from '@/components/AssistantInstructionsMo
 import { StoreSelectorModal } from '@/components/StoreSelectorModal';
 import { FavoriteItem, CartItem, KrogerProduct, KrogerStoreLocation, UserProfile } from '@/lib/types';
 
+/**
+ * Type guard that checks whether a grocery item is a saved FavoriteItem (from Neon)
+ * versus a live KrogerProduct (from the Kroger catalog API).
+ *
+ * FavoriteItem always has a required `krogerUpc` field, whereas KrogerProduct uses `upc`.
+ */
+function isSavedFavorite(item: FavoriteItem | KrogerProduct): item is FavoriteItem {
+  return 'krogerUpc' in item;
+}
+
+/**
+ * Normalizes either a saved FavoriteItem or a live KrogerProduct into a CartItem
+ * so the ActiveCartDrawer can display it consistently.
+ */
+function buildCartItemFromProduct(item: FavoriteItem | KrogerProduct): CartItem {
+  if (isSavedFavorite(item)) {
+    return {
+      id: `cart-${Date.now()}`,
+      upc: item.krogerUpc,
+      title: item.title,
+      brand: item.brand,
+      size: item.size,
+      price: item.lastPrice,
+      imageUrl: item.imageUrl,
+      quantity: 1,
+      addedAt: new Date().toISOString(),
+    };
+  }
+
+  return {
+    id: `cart-${Date.now()}`,
+    upc: item.upc,
+    title: item.description,
+    brand: item.brand,
+    size: item.size,
+    price: item.price,
+    imageUrl: item.imageUrl,
+    quantity: 1,
+    addedAt: new Date().toISOString(),
+  };
+}
+
 export default function Home() {
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -134,21 +176,7 @@ export default function Home() {
   };
 
   const handleItemAdded = (item: FavoriteItem | KrogerProduct) => {
-    const upc = 'krogerUpc' in item ? item.krogerUpc : item.upc;
-    const title = 'title' in item ? item.title : item.description;
-    const price = 'lastPrice' in item ? item.lastPrice : item.price;
-
-    const newCartItem: CartItem = {
-      id: `cart-${Date.now()}`,
-      upc,
-      title,
-      brand: item.brand,
-      size: item.size,
-      price,
-      imageUrl: item.imageUrl,
-      quantity: 1,
-      addedAt: new Date().toISOString(),
-    };
+    const newCartItem = buildCartItemFromProduct(item);
     setCartItems(prev => {
       const updated = [newCartItem, ...prev];
       if (user) {

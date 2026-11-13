@@ -27,6 +27,9 @@ Before making changes:
 - If the user rejects a proposal, revise the plan rather than proceeding.
 
 ## Coding Rules
+- Write code as a senior engineer mentoring junior engineers: prioritize readability and maintainability for engineers of all experience levels.
+- Break logic into small, single-responsibility functions or classes rather than long inline blocks or cryptic ternaries.
+- Comment code clearly to explain the "why" and make the intent obvious to junior engineers.
 - Prefer simple, maintainable solutions.
 - Reuse existing components and functions.
 - Do not introduce unnecessary dependencies.
@@ -51,7 +54,7 @@ After implementing an approved change, summarize:
 1. What changed
 2. Which files changed
 3. Which tests ran and their results
-4. Remaining issues
+4. Remaining issues (and whenever an error occurred, clearly explain what caused the problem and how it was fixed)
 5. Recommended next steps
 
 ## Git
