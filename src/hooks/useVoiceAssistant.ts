@@ -9,7 +9,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { VoiceStatus, PendingConfirmation, FavoriteItem, KrogerProduct } from '@/lib/types';
 import { splitSpokenGroceryList } from '@/lib/voice-intent';
-import { isDeliberateSpeechCancel } from '@/lib/speech-events';
+import {
+  isDeliberateSpeechCancel,
+  estimateSpeechTimeoutMs,
+  createSpeechCompletion,
+  shouldCancelBeforeSpeaking,
+  getTranscriptToProcess,
+  SpeechCompletion,
+} from '@/lib/speech-events';
 import {
   initializeItemQueue,
   advanceItemQueue,
@@ -47,6 +54,18 @@ export function useVoiceAssistant(
   const relistenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startListeningRef = useRef<() => void>(() => {});
   const itemQueueRef = useRef<string[]>([]);
+
+  // Latest pending confirmation, readable from browser callbacks (like
+  // recognition.onend) without going through a setState updater.
+  const pendingConfirmationRef = useRef<PendingConfirmation | null>(null);
+
+  // The "speech finished" tracker for the sentence currently being spoken.
+  // Cancelled when the user taps stop or a newer sentence replaces it.
+  const speechCompletionRef = useRef<SpeechCompletion | null>(null);
+
+  useEffect(() => {
+    pendingConfirmationRef.current = state.pendingConfirmation;
+  }, [state.pendingConfirmation]);
 
   const clearRelistenTimer = useCallback(() => {
     if (relistenTimeoutRef.current) {
@@ -90,13 +109,35 @@ export function useVoiceAssistant(
       return;
     }
 
+    const synth = window.speechSynthesis;
+
+    // A newer sentence replaces any older one: the older sentence's follow-up
+    // step (advance queue / reopen mic) must not run.
+    speechCompletionRef.current?.cancel();
+
+    // Runs exactly once: on onend, on a real onerror, or when the safety timer
+    // fires because Chrome never reported that speech finished.
+    const completion = createSpeechCompletion(() => {
+      setState(prev => ({ ...prev, status: prev.pendingConfirmation ? 'confirming' : 'idle' }));
+      if (onComplete) onComplete();
+    }, estimateSpeechTimeoutMs(text));
+    speechCompletionRef.current = completion;
+
     try {
-      window.speechSynthesis.cancel();
+
+      // Only cancel when something is actually playing: Chrome can silently
+      // drop a speak() that comes right after cancel().
+      const needsCancel = shouldCancelBeforeSpeaking({
+        speaking: synth.speaking,
+        pending: synth.pending,
+      });
+      if (needsCancel) synth.cancel();
+
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
 
-      const voices = window.speechSynthesis.getVoices();
+      const voices = synth.getVoices();
       const naturalVoice = voices.find(v => 
         v.lang.startsWith('en') && 
         (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha'))
@@ -106,8 +147,7 @@ export function useVoiceAssistant(
       setState(prev => ({ ...prev, status: 'speaking', assistantSpeech: text }));
 
       utterance.onend = () => {
-        setState(prev => ({ ...prev, status: prev.pendingConfirmation ? 'confirming' : 'idle' }));
-        if (onComplete) onComplete();
+        completion.finish();
       };
 
       utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
@@ -116,16 +156,28 @@ export function useVoiceAssistant(
         // advance and the mic does not reopen after the user stopped it.
         // We also skip the status update: whoever cancelled already owns the status.
         if (isDeliberateSpeechCancel(event?.error)) {
+          completion.cancel();
           return;
         }
 
-        setState(prev => ({ ...prev, status: 'idle' }));
-        if (onComplete) onComplete();
+        completion.finish();
       };
 
-      window.speechSynthesis.speak(utterance);
+      const startSpeaking = () => {
+        // The user tapped stop (or a newer sentence started) during the pause.
+        if (speechCompletionRef.current !== completion) return;
+        synth.resume(); // un-sticks a paused Chrome speech engine
+        synth.speak(utterance);
+      };
+
+      // After a cancel(), give Chrome a moment before speaking again.
+      if (needsCancel) {
+        setTimeout(startSpeaking, 100);
+      } else {
+        startSpeaking();
+      }
     } catch (e) {
-      if (onComplete) onComplete();
+      completion.finish();
     }
   }, []);
 
@@ -282,6 +334,9 @@ export function useVoiceAssistant(
   const pauseMicrophone = useCallback(() => {
     clearRelistenTimer();
     isListeningRef.current = false;
+    // Stop the speech safety timer so it can't advance the queue after a stop.
+    speechCompletionRef.current?.cancel();
+    speechCompletionRef.current = null;
     if (typeof window !== 'undefined') {
       window.speechSynthesis?.cancel();
     }
@@ -341,6 +396,7 @@ export function useVoiceAssistant(
       recognition.lang = 'en-US';
 
       let finalCaptured = '';
+      let latestInterim = '';
 
       recognition.onstart = () => {
         isListeningRef.current = true;
@@ -362,6 +418,7 @@ export function useVoiceAssistant(
             interim += trans;
           }
         }
+        latestInterim = interim;
         setState(prev => ({ ...prev, transcript: finalCaptured || interim }));
       };
 
@@ -369,15 +426,14 @@ export function useVoiceAssistant(
         isListeningRef.current = false;
         activeRecognitionRef.current = null;
 
-        setState(prev => {
-          const textToProcess = (finalCaptured || prev.transcript).trim();
-          if (textToProcess) {
-            processTranscript(textToProcess, prev.pendingConfirmation, true);
-          } else if (prev.status === 'listening') {
-            return { ...prev, status: 'idle' };
-          }
-          return prev;
-        });
+        // Send the request OUTSIDE of setState. React may run setState updaters
+        // twice (Strict Mode), which used to send every phrase to the server twice.
+        const textToProcess = getTranscriptToProcess(finalCaptured, latestInterim);
+        if (textToProcess) {
+          processTranscript(textToProcess, pendingConfirmationRef.current, true);
+        } else {
+          setState(prev => (prev.status === 'listening' ? { ...prev, status: 'idle' } : prev));
+        }
       };
 
       recognition.onerror = (event: any) => {
@@ -412,6 +468,7 @@ export function useVoiceAssistant(
   useEffect(() => {
     return () => {
       clearRelistenTimer();
+      speechCompletionRef.current?.cancel();
     };
   }, [clearRelistenTimer]);
 
