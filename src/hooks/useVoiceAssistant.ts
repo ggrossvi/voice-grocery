@@ -8,6 +8,13 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { VoiceStatus, PendingConfirmation, FavoriteItem, KrogerProduct } from '@/lib/types';
+import { splitSpokenGroceryList } from '@/lib/voice-intent';
+import { isDeliberateSpeechCancel } from '@/lib/speech-events';
+import {
+  initializeItemQueue,
+  advanceItemQueue,
+  shouldClearQueueOnIntent,
+} from '@/lib/item-queue';
 
 interface VoiceAssistantState {
   status: VoiceStatus;
@@ -39,6 +46,7 @@ export function useVoiceAssistant(
   const isListeningRef = useRef<boolean>(false);
   const relistenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startListeningRef = useRef<() => void>(() => {});
+  const itemQueueRef = useRef<string[]>([]);
 
   const clearRelistenTimer = useCallback(() => {
     if (relistenTimeoutRef.current) {
@@ -102,7 +110,15 @@ export function useVoiceAssistant(
         if (onComplete) onComplete();
       };
 
-      utterance.onerror = () => {
+      utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
+        // A deliberate cancel (user tapped stop, or a newer utterance replaced this one)
+        // is not "finished talking". Skip the follow-up step so the queue does not
+        // advance and the mic does not reopen after the user stopped it.
+        // We also skip the status update: whoever cancelled already owns the status.
+        if (isDeliberateSpeechCancel(event?.error)) {
+          return;
+        }
+
         setState(prev => ({ ...prev, status: 'idle' }));
         if (onComplete) onComplete();
       };
@@ -118,6 +134,25 @@ export function useVoiceAssistant(
     currentConfirmation: PendingConfirmation | null,
     isVoiceInput: boolean = true
   ) => {
+    // If user says "I'm done" or "that's all", clear any remaining queued items immediately
+    if (shouldClearQueueOnIntent(transcriptText)) {
+      itemQueueRef.current = [];
+    }
+
+    // Check if the user spoke a multi-item list (e.g. "spinach, eggs and brussel sprouts")
+    // Only split when NOT waiting on a pending confirmation (so "yes", "no" etc. aren't split)
+    let itemToProcess = transcriptText;
+    if (!currentConfirmation && !shouldClearQueueOnIntent(transcriptText)) {
+      const splitItems = splitSpokenGroceryList(transcriptText);
+      if (splitItems.length > 1) {
+        const { currentItem, remainingQueue } = initializeItemQueue(splitItems);
+        itemQueueRef.current = remainingQueue;
+        if (currentItem) {
+          itemToProcess = currentItem;
+        }
+      }
+    }
+
     setState(prev => ({ 
       ...prev, 
       status: 'thinking', 
@@ -131,7 +166,7 @@ export function useVoiceAssistant(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          transcript: transcriptText,
+          transcript: itemToProcess,
           pendingConfirmation: currentConfirmation,
           locationId: selectedStoreId,
         }),
@@ -167,7 +202,45 @@ export function useVoiceAssistant(
         if (onItemAdded && data.addedItem) {
           onItemAdded(data.addedItem);
         }
-        if (shouldContinueListening) {
+
+        // If items remain in queue, automatically pop and process the next item
+        const { nextItem, remainingQueue } = advanceItemQueue(itemQueueRef.current);
+        itemQueueRef.current = remainingQueue;
+
+        if (nextItem) {
+          speak(data.spokenResponse, () => {
+            // Automatically process next queued item without waiting for user to speak
+            setTimeout(() => {
+              processTranscript(nextItem, null, isVoiceInput);
+            }, 500);
+          });
+        } else if (shouldContinueListening) {
+          speak(data.spokenResponse, () => {
+            scheduleRelisten();
+          });
+        } else {
+          speak(data.spokenResponse);
+        }
+      } else if (data.type === 'CANCELLED') {
+        setState(prev => ({
+          ...prev,
+          status: 'idle',
+          isProcessing: false,
+          assistantSpeech: data.spokenResponse,
+          pendingConfirmation: null,
+        }));
+
+        // If user cancelled this specific item but more items exist in queue, advance to next
+        const { nextItem, remainingQueue } = advanceItemQueue(itemQueueRef.current);
+        itemQueueRef.current = remainingQueue;
+
+        if (nextItem) {
+          speak(data.spokenResponse, () => {
+            setTimeout(() => {
+              processTranscript(nextItem, null, isVoiceInput);
+            }, 500);
+          });
+        } else if (shouldContinueListening) {
           speak(data.spokenResponse, () => {
             scheduleRelisten();
           });
@@ -201,7 +274,12 @@ export function useVoiceAssistant(
     }
   }, [speak, onItemAdded, selectedStoreId, scheduleRelisten]);
 
-  const stopListening = useCallback(() => {
+  /**
+   * Hardware-only shutdown: stops the relisten timer, speech output and the
+   * active recognition session. It deliberately does NOT touch the item queue,
+   * because startListening() calls this every time it reopens the mic mid-list.
+   */
+  const pauseMicrophone = useCallback(() => {
     clearRelistenTimer();
     isListeningRef.current = false;
     if (typeof window !== 'undefined') {
@@ -215,6 +293,15 @@ export function useVoiceAssistant(
     }
     setState(prev => ({ ...prev, status: 'idle' }));
   }, [clearRelistenTimer]);
+
+  /**
+   * User-initiated cancel (tapping stop). Ends the whole grocery session:
+   * clears any queued items AND turns the microphone off.
+   */
+  const stopListening = useCallback(() => {
+    itemQueueRef.current = [];
+    pauseMicrophone();
+  }, [pauseMicrophone]);
 
   const startListening = useCallback(async () => {
     if (typeof window === 'undefined') return;
@@ -243,7 +330,8 @@ export function useVoiceAssistant(
       return;
     }
 
-    stopListening();
+    // Only pause the mic here; stopListening() would wipe the queued items.
+    pauseMicrophone();
 
     try {
       window.speechSynthesis?.cancel();
@@ -315,7 +403,7 @@ export function useVoiceAssistant(
         errorMessage: 'Could not activate microphone. Use text input below.',
       }));
     }
-  }, [stopListening, processTranscript]);
+  }, [pauseMicrophone, processTranscript]);
 
   useEffect(() => {
     startListeningRef.current = startListening;
@@ -368,13 +456,26 @@ export function useVoiceAssistant(
         if (onItemAdded) {
           onItemAdded(data.item || product);
         }
-        speak(`Added ${product.description} to your Kroger cart and saved it as your favorite!`);
+
+        // Advance to next queued item if one exists
+        const { nextItem, remainingQueue } = advanceItemQueue(itemQueueRef.current);
+        itemQueueRef.current = remainingQueue;
+
+        if (nextItem) {
+          speak(`Added ${product.description} to your Kroger cart!`, () => {
+            setTimeout(() => {
+              processTranscript(nextItem, null, true);
+            }, 500);
+          });
+        } else {
+          speak(`Added ${product.description} to your Kroger cart and saved it as your favorite!`);
+        }
       }
     } catch (err) {
       console.error('Failed to add selected option:', err);
       setState(prev => ({ ...prev, status: 'idle', isProcessing: false }));
     }
-  }, [state.pendingConfirmation, onItemAdded, speak]);
+  }, [state.pendingConfirmation, onItemAdded, speak, processTranscript]);
 
   return {
     ...state,
