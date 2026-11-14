@@ -61,7 +61,10 @@ After implementing an approved change, summarize:
 3. Which tests ran and their results
 4. Remaining issues (and whenever an error occurred, clearly explain what caused the problem and how it was fixed)
 5. Recommended next steps
-6. Update `PROBLEMS.md` (which is ignored by `.gitignore`) with a log entry for any new problems addressed, how they were solved, and the reasoning behind the choice.
+6. Whenever we encounter or address a problem, add a structured entry to `PROBLEMS.md` (which is ignored by `.gitignore`) detailing:
+   - **Problem Encountered**: Clear description of what happened or what technical gap exists.
+   - **Possible Solutions**: Viable alternative approaches considered.
+   - **Senior Developer Recommendation & Reasoning**: What approach was chosen, why it was chosen, and how it was implemented.
 
 ## Git
 - Always run the relevant automated test suite (`npm test`) and build check (`npm run build`) before proposing or making a commit. Never commit broken or untested code.
